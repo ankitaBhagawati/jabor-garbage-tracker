@@ -1,0 +1,29 @@
+.disclaimer-shine {
+  position: relative;
+  font-size: 12px;
+  color: #9a8a7a;
+  opacity: 0.7;
+  overflow: hidden;
+}
+
+.disclaimer-shine::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -150%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    120deg,
+    transparent,
+    rgba(255, 255, 255, 0.8),
+    transparent
+  );
+  transform: skewX(-20deg);
+  animation: shine 2s infinite;
+}
+
+@keyframes shine {
+  0% { left: -150%; }
+  100% { left: 150%; }
+}
