@@ -524,6 +524,7 @@ export default function Jabor() {
           .mob-nav  { display:flex !important; }
           .fab      { display:flex !important; }
           .main-wrap { padding-bottom:calc(72px + env(safe-area-inset-bottom,0px)) !important; }
+          footer { padding-bottom:calc(80px + env(safe-area-inset-bottom,10px)) !important; }
           .stat-n { font-size:26px; }
           .form-2col { grid-template-columns:1fr; }
           .acc-grid  { grid-template-columns:1fr; }
