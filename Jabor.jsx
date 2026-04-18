@@ -120,87 +120,151 @@ function WIcon({ type, size = 16 }) {
 // ── REAL ASSAM MAP — uses the actual Assam district map as background
 // with animated SVG red pins for reports
 function AssamMap({ reports }) {
-  // Assam bounding box: lon 89.55–96.25, lat 23.95–28.25
   const LON_MIN = 89.55, LON_MAX = 96.25;
   const LAT_MIN = 23.95, LAT_MAX = 28.25;
-
-  // Convert lon/lat to % position on the GIF image
   const tx = lon => ((lon - LON_MIN) / (LON_MAX - LON_MIN)) * 100;
   const ty = lat => ((LAT_MAX - lat) / (LAT_MAX - LAT_MIN)) * 100;
 
   const gps   = reports.filter(r => r.lat && r.lng);
   const nogps = reports.filter(r => !r.lat || !r.lng);
-
-  // Major Assam city coords for scattering non-GPS reports
   const CITIES = [
-    [91.74, 26.18], [94.91, 27.48], [93.97, 26.75], [92.68, 26.35],
-    [91.00, 26.32], [90.27, 26.40], [89.97, 26.02], [94.21, 26.74],
-    [95.37, 27.49], [92.80, 26.68], [91.44, 26.45], [90.55, 26.48],
-    [93.60, 26.55], [92.35, 24.87], [92.85, 24.85], [94.65, 27.00],
+    [91.74,26.18],[94.91,27.48],[93.97,26.75],[92.68,26.35],
+    [91.00,26.32],[90.27,26.40],[89.97,26.02],[94.21,26.74],
+    [95.37,27.49],[92.80,26.68],[91.44,26.45],[90.55,26.48],
+    [93.60,26.55],[92.35,24.87],[92.85,24.85],[94.65,27.00],
   ];
 
+  const [zoom,     setZoom]     = useState(1);
+  const [pan,      setPan]      = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const dragStart    = useRef(null);
+  const lastPan      = useRef({ x: 0, y: 0 });
+  const lastDist     = useRef(null);
+  const containerRef = useRef(null);
+
+  const MIN_Z = 1, MAX_Z = 5;
+  const clamp = z => Math.min(MAX_Z, Math.max(MIN_Z, z));
+
+  // Scroll wheel zoom
+  const onWheel = e => {
+    e.preventDefault();
+    setZoom(z => clamp(z + (e.deltaY < 0 ? 0.15 : -0.15)));
+  };
+
+  // Mouse drag to pan
+  const onMD = e => { if (zoom <= 1) return; setDragging(true); dragStart.current = { x: e.clientX, y: e.clientY }; lastPan.current = { ...pan }; };
+  const onMM = e => {
+    if (!dragging || !dragStart.current) return;
+    setPan({ x: lastPan.current.x + e.clientX - dragStart.current.x, y: lastPan.current.y + e.clientY - dragStart.current.y });
+  };
+  const onMU = () => setDragging(false);
+
+  // Touch pinch + drag
+  const onTS = e => {
+    if (e.touches.length === 2) {
+      lastDist.current = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    } else if (e.touches.length === 1 && zoom > 1) {
+      dragStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      lastPan.current = { ...pan };
+    }
+  };
+  const onTM = e => {
+    e.preventDefault();
+    if (e.touches.length === 2 && lastDist.current) {
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      setZoom(z => clamp(z + (d - lastDist.current) * 0.01));
+      lastDist.current = d;
+    } else if (e.touches.length === 1 && dragStart.current && zoom > 1) {
+      setPan({ x: lastPan.current.x + e.touches[0].clientX - dragStart.current.x, y: lastPan.current.y + e.touches[0].clientY - dragStart.current.y });
+    }
+  };
+  const onTE = () => { lastDist.current = null; dragStart.current = null; };
+
+  useEffect(() => { if (zoom <= 1) setPan({ x: 0, y: 0 }); }, [zoom]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  const reset = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+
   return (
-    <div style={{ position: "relative", width: "100%", aspectRatio: "1270/920", borderRadius: 12, overflow: "visible", background: "#FAF0DC" }}>
-      {/* Assam outline map — transparent bg, red border */}
-      <img
-        src={ASSAM_MAP_SRC}
-        alt="Assam outline map"
-        style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
-      />
-      {/* SVG overlay for pins — positioned: absolute, same dimensions */}
-      <svg
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible" }}
+    <div style={{ position: "relative", width: "100%", borderRadius: 12, overflow: "hidden", background: "#FAF0DC", userSelect: "none" }}>
+      {/* +/- zoom buttons */}
+      <div style={{ position: "absolute", top: 8, left: 8, zIndex: 10, display: "flex", flexDirection: "column", gap: 4 }}>
+        {[{label:"+", fn:()=>setZoom(z=>clamp(z+0.5))}, {label:"−", fn:()=>setZoom(z=>clamp(z-0.5))}].map(b => (
+          <button key={b.label} onClick={b.fn} style={{ width:28, height:28, borderRadius:7, border:"1px solid #F0D9A0", background:"#FFFBF1", color:"#E36A6A", fontSize:18, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>{b.label}</button>
+        ))}
+        {zoom > 1 && (
+          <button onClick={reset} style={{ width:28, height:28, borderRadius:7, border:"1px solid #F0D9A0", background:"#FFE8E8", color:"#E36A6A", fontSize:11, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }} title="Reset">↺</button>
+        )}
+      </div>
+
+      {/* Zoom level / report count badge */}
+      <div style={{ position:"absolute", top:8, right:8, zIndex:10, background:"#E36A6Aee", color:"#fff", borderRadius:8, padding:"3px 8px", fontSize:10, fontWeight:700 }}>
+        {zoom > 1 ? `${zoom.toFixed(1)}×` : reports.length === 0 ? "No reports" : `${reports.length} report${reports.length!==1?"s":""}`}
+      </div>
+
+      {/* Hint */}
+      <div style={{ position:"absolute", bottom:6, left:"50%", transform:"translateX(-50%)", zIndex:10, fontSize:9, color:"#b87a5a", background:"#FFFBF1cc", borderRadius:4, padding:"2px 6px", whiteSpace:"nowrap", pointerEvents:"none" }}>
+        {zoom > 1 ? "drag to pan · ↺ to reset" : "scroll or + to zoom · pinch on mobile"}
+      </div>
+
+      {/* Zoomable inner */}
+      <div
+        ref={containerRef}
+        onMouseDown={onMD} onMouseMove={onMM} onMouseUp={onMU} onMouseLeave={onMU}
+        onTouchStart={onTS} onTouchMove={onTM} onTouchEnd={onTE}
+        style={{
+          width: "100%", aspectRatio: "1270/920",
+          cursor: zoom > 1 ? (dragging ? "grabbing" : "grab") : "default",
+          transform: `scale(${zoom}) translate(${pan.x/zoom}px, ${pan.y/zoom}px)`,
+          transformOrigin: "center center",
+          transition: dragging ? "none" : "transform 0.12s ease",
+          willChange: "transform",
+        }}
       >
-        <defs>
-          <style>{`
-            @keyframes pinbob { 0%,100%{transform:translateY(0px)} 50%{transform:translateY(-2px)} }
-            @keyframes pinring { 0%{r:2;opacity:.8} 100%{r:6;opacity:0} }
-            .pin-g { animation: pinbob 2s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
-            .pin-ring { animation: pinring 1.8s ease-out infinite; }
-          `}</style>
-        </defs>
-
-        {/* GPS-tagged — real positions */}
-        {gps.map((r, i) => {
-          const w   = WASTE.find(t => t.id === r.waste_type);
-          const cx  = tx(r.lng), cy = ty(r.lat);
-          const col = w?.color || "#EF4444";
-          return (
-            <g key={i} className="pin-g" style={{ animationDelay: `${i * 0.25}s` }}>
-              <circle cx={cx} cy={cy} r="2" fill="none" stroke={col} strokeWidth="0.4" className="pin-ring" style={{ animationDelay: `${i * 0.25}s` }} />
-              {/* Pin body */}
-              <circle cx={cx} cy={cy - 3.5} r="2.2" fill={col} stroke="#fff" strokeWidth="0.5" />
-              <line x1={cx} y1={cy - 1.3} x2={cx} y2={cy} stroke={col} strokeWidth="0.8" strokeLinecap="round" />
-              {/* Waste icon dot */}
-              <circle cx={cx} cy={cy - 3.5} r="0.8" fill="#fff" opacity="0.8" />
-            </g>
-          );
-        })}
-
-        {/* Non-GPS — scattered at city coords */}
-        {nogps.map((r, i) => {
-          const w   = WASTE.find(t => t.id === r.waste_type);
-          const city = CITIES[i % CITIES.length];
-          const cx  = tx(city[0]), cy = ty(city[1]);
-          const col = w?.color || "#EF4444";
-          return (
-            <g key={`n${i}`} className="pin-g" style={{ animationDelay: `${i * 0.35}s`, opacity: 0.65 }}>
-              <circle cx={cx} cy={cy - 2.8} r="1.8" fill={col} stroke="#fff" strokeWidth="0.4" />
-              <line x1={cx} y1={cy - 1} x2={cx} y2={cy} stroke={col} strokeWidth="0.7" strokeLinecap="round" />
-            </g>
-          );
-        })}
-      </svg>
-
-      {/* Report count badge */}
-      <div style={{ position: "absolute", top: 6, right: 6, background: "#E36A6Aee", color: "#fff", borderRadius: 8, padding: "3px 8px", fontSize: 10, fontWeight: 700 }}>
-        {reports.length === 0 ? "No reports" : `${reports.length} report${reports.length !== 1 ? "s" : ""}`}
+        <img src={ASSAM_MAP_SRC} alt="Assam map" draggable={false}
+          style={{ width:"100%", height:"100%", objectFit:"contain", display:"block", pointerEvents:"none" }} />
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none"
+          style={{ position:"absolute", inset:0, width:"100%", height:"100%", overflow:"visible", pointerEvents:"none" }}>
+          <defs>
+            <style>{`
+              @keyframes pinbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+              @keyframes pinring{0%{r:2;opacity:.8}100%{r:6;opacity:0}}
+              .pin-g{animation:pinbob 2s ease-in-out infinite;transform-box:fill-box;transform-origin:50% 100%}
+              .pin-ring{animation:pinring 1.8s ease-out infinite}
+            `}</style>
+          </defs>
+          {gps.map((r,i) => {
+            const w=WASTE.find(t=>t.id===r.waste_type), cx=tx(r.lng), cy=ty(r.lat), col=w?.color||"#EF4444";
+            return (
+              <g key={i} className="pin-g" style={{animationDelay:`${i*.25}s`}}>
+                <circle cx={cx} cy={cy} r="2" fill="none" stroke={col} strokeWidth="0.4" className="pin-ring" style={{animationDelay:`${i*.25}s`}}/>
+                <circle cx={cx} cy={cy-3.5} r="2.2" fill={col} stroke="#fff" strokeWidth="0.5"/>
+                <line x1={cx} y1={cy-1.3} x2={cx} y2={cy} stroke={col} strokeWidth="0.8" strokeLinecap="round"/>
+                <circle cx={cx} cy={cy-3.5} r="0.8" fill="#fff" opacity="0.8"/>
+              </g>
+            );
+          })}
+          {nogps.map((r,i) => {
+            const w=WASTE.find(t=>t.id===r.waste_type), city=CITIES[i%CITIES.length], cx=tx(city[0]), cy=ty(city[1]), col=w?.color||"#EF4444";
+            return (
+              <g key={`n${i}`} className="pin-g" style={{animationDelay:`${i*.35}s`,opacity:0.65}}>
+                <circle cx={cx} cy={cy-2.8} r="1.8" fill={col} stroke="#fff" strokeWidth="0.4"/>
+                <line x1={cx} y1={cy-1} x2={cx} y2={cy} stroke={col} strokeWidth="0.7" strokeLinecap="round"/>
+              </g>
+            );
+          })}
+        </svg>
       </div>
     </div>
   );
 }
+
 
 // ── REPORT CARD — with thumbnail + MLA/MP on separate lines
 function ReportCard({ r, expanded, onClick }) {
@@ -256,18 +320,50 @@ function ShameBoard({ reports }) {
   const mlaMap = {};
   reports.forEach(r => {
     const k = `${r.mla}||${r.mla_party}||${r.constituency}||${r.district}`;
-    if (!mlaMap[k]) mlaMap[k] = { name: r.mla, party: r.mla_party, constituency: r.constituency, district: r.district, count: 0 };
+    if (!mlaMap[k]) mlaMap[k] = { name: r.mla, party: r.mla_party, constituency: r.constituency, district: r.district, count: 0, latest: r.created_at };
     mlaMap[k].count++;
+    // track most recent report for this MLA
+    if (new Date(r.created_at) > new Date(mlaMap[k].latest)) mlaMap[k].latest = r.created_at;
   });
   const mpMap = {};
   reports.forEach(r => {
     const k = `${r.mp}||${r.mp_party}||${r.lok_sabha_seat}`;
-    if (!mpMap[k]) mpMap[k] = { name: r.mp, party: r.mp_party, seat: r.lok_sabha_seat, count: 0, areas: new Set() };
+    if (!mpMap[k]) mpMap[k] = { name: r.mp, party: r.mp_party, seat: r.lok_sabha_seat, count: 0, areas: new Set(), latest: r.created_at };
     mpMap[k].count++;
     mpMap[k].areas.add(r.constituency);
+    if (new Date(r.created_at) > new Date(mpMap[k].latest)) mpMap[k].latest = r.created_at;
   });
-  const mlaRank = Object.values(mlaMap).sort((a, b) => b.count - a.count);
-  const mpRank  = Object.values(mpMap).map(m => ({ ...m, areas: m.areas.size })).sort((a, b) => b.count - a.count);
+  // Weighted score: recent reports worth more (60-day half-life decay)
+  // score = sum of weight for each report, weight = e^(-daysAgo/60)
+  const calcScore = (reportList) => reportList.reduce((sum, r) => {
+    const daysAgo = (Date.now() - new Date(r.created_at)) / 864e5;
+    return sum + Math.exp(-daysAgo / 60);
+  }, 0);
+
+  // Attach score to each MLA
+  const mlaReports = {}; // key -> array of reports
+  reports.forEach(r => {
+    const k = `${r.mla}||${r.mla_party}||${r.constituency}||${r.district}`;
+    if (!mlaReports[k]) mlaReports[k] = [];
+    mlaReports[k].push(r);
+  });
+  const mpReports = {};
+  reports.forEach(r => {
+    const k = `${r.mp}||${r.mp_party}||${r.lok_sabha_seat}`;
+    if (!mpReports[k]) mpReports[k] = [];
+    mpReports[k].push(r);
+  });
+
+  // Only include if count >= 2, rank by weighted score
+  const mlaRank = Object.entries(mlaMap)
+    .filter(([k, p]) => p.count >= 2)
+    .map(([k, p]) => ({ ...p, score: calcScore(mlaReports[k] || []) }))
+    .sort((a, b) => b.score - a.score);
+
+  const mpRank = Object.entries(mpMap)
+    .filter(([k, p]) => p.count >= 2)
+    .map(([k, p]) => ({ ...p, areas: p.areas.size, score: calcScore(mpReports[k] || []) }))
+    .sort((a, b) => b.score - a.score);
   const ranking = tab === "mla" ? mlaRank : mpRank;
   const maxC    = ranking[0]?.count || 1;
   const medals  = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
@@ -277,12 +373,6 @@ function ShameBoard({ reports }) {
     if (n >= 2)  return { label: "Needs Attention",    color: "#b87a5a", bg: "#FFF2D0" };
     return               { label: "Reported",           color: "#9CA3AF", bg: "#F3F4F6" };
   };
-  if (!reports.length) return (
-    <div style={{ textAlign: "center", padding: "32px 16px" }}>
-      <div style={{ fontSize: 40, marginBottom: 10 }}>🏴</div>
-      <p style={{ color: "#b87a5a", fontSize: 14 }}>No reports yet. Submit the first one to start the board.</p>
-    </div>
-  );
   return (
     <div>
       <div style={{ display: "flex", gap: 6, marginBottom: 16, background: "#FFF2D0", borderRadius: 12, padding: 4 }}>
@@ -295,6 +385,13 @@ function ShameBoard({ reports }) {
           }}>{t.label}</button>
         ))}
       </div>
+      {ranking.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "32px 16px" }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🏅</div>
+          <p style={{ color: "#b87a5a", fontSize: 14, fontWeight: 600 }}>Nobody is a winner or rank holder here yet</p>
+          <p style={{ color: "#b87a5a", fontSize: 12, marginTop: 6 }}>Politicians appear here only when they have 2+ reports.</p>
+        </div>
+      ) : (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {ranking.map((p, i) => {
           const lv = shame(p.count);
@@ -326,6 +423,66 @@ function ShameBoard({ reports }) {
             </div>
           );
         })}
+      </div>
+      )}
+    </div>
+  );
+}
+
+// ── SUCCESS SCREEN with 3s progress bar + redirect
+function SuccessScreen({ onDone }) {
+  const [progress, setProgress] = useState(0);
+  const MESSAGES = [
+    "Taking you back to the dashboard…",
+    "Your report is now public…",
+    "MLA & MP have been tagged…",
+    "Adding to the record…",
+  ];
+  const [msgIdx, setMsgIdx] = useState(0);
+  const DURATION = 3000; // 3 seconds
+
+  useEffect(() => {
+    const start = Date.now();
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const pct = Math.min((elapsed / DURATION) * 100, 100);
+      setProgress(pct);
+      setMsgIdx(Math.min(Math.floor((pct / 100) * MESSAGES.length), MESSAGES.length - 1));
+      if (pct >= 100) {
+        clearInterval(interval);
+        setTimeout(onDone, 200);
+      }
+    }, 30);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="pop-in" style={{ maxWidth: 420, margin: "60px auto", textAlign: "center", padding: "0 16px" }}>
+      <img src={LOGO} alt="Jabor" style={{ width: 80, height: 80, objectFit: "contain", margin: "0 auto 16px", display: "block" }} />
+      <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8, letterSpacing: "-0.03em" }}>
+        Report Submitted! ✅
+      </h2>
+      <p style={{ color: "#b87a5a", fontSize: 14, lineHeight: 1.7, marginBottom: 24 }}>
+        Your report is now live.<br />The responsible MLA & MP have been recorded.
+      </p>
+
+      {/* Progress bar */}
+      <div style={{ background: "#F0D9A0", borderRadius: 99, height: 6, overflow: "hidden", marginBottom: 12 }}>
+        <div style={{
+          height: "100%", borderRadius: 99,
+          background: "linear-gradient(90deg, #E36A6A, #FFB2B2)",
+          width: `${progress}%`,
+          transition: "width 0.03s linear",
+        }} />
+      </div>
+
+      {/* Loading message */}
+      <p style={{ fontSize: 13, color: "#E36A6A", fontWeight: 600, fontFamily: "monospace", letterSpacing: "0.02em" }}>
+        {MESSAGES[msgIdx]}
+      </p>
+
+      <div style={{ marginTop: 20, padding: 12, background: "#FFE8C8", borderRadius: 12, border: "1px solid #F0D9A0", fontSize: 12, color: "#D9534F" }}>
+        Share with your community to amplify the pressure 💪
       </div>
     </div>
   );
@@ -429,8 +586,11 @@ export default function Jabor() {
   const goToReport = () => setView("report");
 
   const onSubmit = async () => {
-    if (!form.district || !form.constituency || !form.area.trim() || !form.description.trim()) {
-      alert("Please fill District, Constituency, Area and Description."); return;
+    if (!form.district || !form.constituency || !form.area.trim()) {
+      alert("Please fill District, Constituency and Area."); return;
+    }
+    if (!form.photo) {
+      alert("Please add a photo of the garbage dump."); return;
     }
     if (!preview) { alert("Politician data still loading — please wait."); return; }
     setSubmitting(true); setSubmitStep("saving");
@@ -451,9 +611,9 @@ export default function Jabor() {
       else console.warn("Photo upload failed — report saved without photo.");
     }
     if (saved) setReports(prev => [{ ...payload, ...saved }, ...prev]);
-    setSubmitting(false); setSubmitStep(""); setSubmitted(true); setPreview(null);
+    setSubmitting(false); setSubmitStep(""); setPreview(null);
     setForm({ district: "", constituency: "", area: "", landmark: "", waste_type: "mixed", description: "", photo: null, photoPreview: null });
-    setTimeout(() => { setSubmitted(false); setView("dashboard"); }, 3200);
+    setSubmitted(true);
   };
 
   const total = reports.length;
@@ -697,8 +857,8 @@ export default function Jabor() {
               ) : (
                 <div>
                   <div style={{ fontSize: 28, marginBottom: 6 }}>📷</div>
-                  <div style={{ fontWeight: 600, color: "#E36A6A", marginBottom: 3 }}>Add a photo</div>
-                  <div style={{ fontSize: 12, color: "#b87a5a" }}>Tap to upload</div>
+                  <div style={{ fontWeight: 600, color: "#E36A6A", marginBottom: 3 }}>Add a photo <span style={{ color: "#E36A6A" }}>*</span></div>
+                  <div style={{ fontSize: 12, color: "#b87a5a" }}>Required · Tap to upload</div>
                 </div>
               )}
               <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPhoto} />
@@ -777,8 +937,8 @@ export default function Jabor() {
 
             {/* Description */}
             <div className="card" style={{ marginBottom: 20 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>📝 Description <span style={{ color: "#E36A6A" }}>*</span></div>
-              <textarea className="inp" placeholder="Where exactly? How bad? How long has it been there?" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>📝 Description <span style={{ color: "#b87a5a", fontSize: 12, fontWeight: 400 }}>(optional)</span></div>
+              <textarea className="inp" placeholder="Where exactly? How bad? How long has it been there? (optional)" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
             </div>
 
             <button className="btn-p" style={{ width: "100%", padding: 16, fontSize: 16 }} onClick={onSubmit} disabled={submitting}>
@@ -790,16 +950,9 @@ export default function Jabor() {
           </div>
         )}
 
-        {/* SUCCESS */}
+        {/* SUCCESS — 3s loading bar then redirect */}
         {view === "report" && submitted && (
-          <div className="pop-in" style={{ maxWidth: 420, margin: "60px auto", textAlign: "center" }}>
-            <img src={LOGO} alt="Jabor" style={{ width: 80, height: 80, objectFit: "contain", margin: "0 auto 14px", display: "block" }} />
-            <h2 style={{ fontSize: 26, fontWeight: 800, marginBottom: 10, letterSpacing: "-0.03em" }}>Report Submitted!</h2>
-            <p style={{ color: "#b87a5a", fontSize: 14, lineHeight: 1.7 }}>Your report is now live.<br />The responsible MLA & MP have been recorded.</p>
-            <div style={{ marginTop: 18, padding: 14, background: "#FFE8C8", borderRadius: 12, border: "1px solid #F0D9A0", fontSize: 13, color: "#D9534F", fontWeight: 500 }}>
-              Share with your community to amplify the pressure 💪
-            </div>
-          </div>
+          <SuccessScreen onDone={() => { setSubmitted(false); setView("dashboard"); }} />
         )}
 
         {/* FEED */}
