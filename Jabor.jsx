@@ -284,18 +284,26 @@ function ReportCard({ r, expanded, onClick }) {
             {w.icon}
           </div>
         )}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, width: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 3 }}>
             <span style={{ fontWeight: 700, fontSize: 14 }}>{r.constituency}</span>
             <span style={{ color: "#b87a5a", fontSize: 12 }}>· {r.district}</span>
             <span style={{ marginLeft: "auto", fontSize: 11, color: "#b87a5a", fontFamily: "monospace" }}><TimeAgo date={r.created_at} /></span>
           </div>
           {(r.area || r.landmark) && (
-            <p style={{ fontSize: 11, color: "#b87a5a", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <p style={{ fontSize: 11, color: "#b87a5a", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
               📍 {[r.area, r.landmark].filter(Boolean).join(" · ")}
             </p>
           )}
-          <p style={{ fontSize: 13, color: "#5C3A1E", marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: expanded ? "normal" : "nowrap" }}>{r.description}</p>
+          <p style={{
+            fontSize: 13, color: "#5C3A1E", marginBottom: 6,
+            overflow: "hidden",
+            display: "-webkit-box",
+            WebkitLineClamp: expanded ? "unset" : 2,
+            WebkitBoxOrient: "vertical",
+            whiteSpace: expanded ? "normal" : "normal",
+            wordBreak: "break-word",
+          }}>{r.description}</p>
           {/* FIX 2: MLA and MP on separate lines */}
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
@@ -654,7 +662,7 @@ export default function Jabor() {
         select.inp { cursor:pointer; }
         textarea.inp { resize:vertical; min-height:92px; }
         .lbl { font-size:11px; font-weight:700; color:#b87a5a; display:block; margin-bottom:6px; font-family:monospace; letter-spacing:.06em; }
-        .rcard { background:#FFF2D0; border:1px solid #F0D9A0; border-radius:14px; padding:14px; cursor:pointer; transition:all .2s; touch-action:manipulation; }
+        .rcard { background:#FFF2D0; border:1px solid #F0D9A0; border-radius:14px; padding:14px; cursor:pointer; transition:all .2s; touch-action:manipulation; overflow:hidden; min-width:0; }
         .rcard:active { transform:scale(.985); }
         @media(hover:hover) { .rcard:hover { border-color:#E36A6A; transform:translateY(-1px); box-shadow:0 4px 14px rgba(227,106,106,.12); } }
         .pbar  { height:3px; border-radius:2px; background:#F0D9A0; overflow:hidden; margin-top:8px; }
