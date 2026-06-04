@@ -90,18 +90,19 @@ const db = {
   async insertReport(data) {
     const res = await fetch(`${SUPA_URL}/rest/v1/reports`, {
       method: "POST",
-      headers: { ...H, "Content-Type": "application/json", Prefer: "return=representation" },
+      // Public users can insert reports but read them through public_reports.
+      // Asking PostgREST to return the row would also require a reports SELECT policy.
+      headers: { ...H, "Content-Type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify(data),
     });
     const text = await res.text();
     if (!res.ok) {
       if (res.status === 401 && text.includes("row-level security policy")) {
-        throw new Error("Public report submission is not enabled in Supabase. Apply the Jabor public report insert policy.");
+        throw new Error("Supabase rejected the report insert. Apply the Jabor public report insert policy and verify its WITH CHECK values.");
       }
       throw new Error(`Report submission failed: ${res.status} ${text}`);
     }
-    const rows = text ? JSON.parse(text) : [];
-    return rows[0] || null;
+    return data;
   },
   async uploadPhoto(file) {
     // Supabase stores only the Cloudinary secure URL returned by this upload.
@@ -1085,8 +1086,7 @@ export default function Jabor() {
         waste_type: form.waste_type, description: form.description.trim(),
         lat: null, lng: null, photo_url: photoUrl, status: "verified", is_deleted: false,
       };
-      const saved = await db.insertReport(payload);
-      setReports(prev => [{ ...payload, ...saved }, ...prev.filter(r => r.id !== saved.id)]);
+      await db.insertReport(payload);
       await loadPublicReports(feedFilters);
       setPreview(null);
       setForm({ district: "", constituency: "", area: "", landmark: "", waste_type: "mixed", description: "", photo: null, photoPreview: null });

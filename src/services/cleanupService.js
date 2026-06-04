@@ -21,7 +21,9 @@ export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimat
   const imageUrl = await uploadImageToCloudinary(imageFile, "jabor/cleanup-proofs");
   return restJson("/rest/v1/cleanup_proofs", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+    // Pending proofs are not publicly readable, so avoid requiring SELECT RLS
+    // permission just to complete a valid public insert.
+    headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({
       report_id: reportId,
       image_url: imageUrl,
