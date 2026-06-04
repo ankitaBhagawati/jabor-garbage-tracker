@@ -4,6 +4,7 @@
 -- public SELECT policy on the underlying reports table.
 
 alter table public.reports enable row level security;
+alter table public.reports alter column status set default 'verified';
 grant usage on schema public to anon, authenticated;
 
 revoke insert on public.reports from anon, authenticated;
@@ -20,6 +21,7 @@ grant insert (
   waste_type,
   description,
   photo_url,
+  status,
   lat,
   lng
 ) on public.reports to anon, authenticated;

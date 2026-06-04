@@ -6,18 +6,13 @@ export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimat
   if (!imageFile.type?.startsWith("image/")) throw new Error("Cleanup proof must be an image.");
 
   const reportParams = new URLSearchParams();
-  reportParams.set("select", "id,status,cleanup_proof_status");
+  reportParams.set("select", "id,status");
   reportParams.set("id", `eq.${reportId}`);
   reportParams.set("limit", "1");
-  const reports = await restJson(`/rest/v1/public_reports?${reportParams.toString()}`);
+  const reports = await restJson(`/rest/v1/reports?${reportParams.toString()}`);
   const report = Array.isArray(reports) ? reports[0] : null;
   if (!report || report.status !== "verified") {
     throw new Error("This report is not available for cleanup proof.");
-  }
-  if (report.cleanup_proof_status === "pending" || report.cleanup_proof_status === "approved") {
-    throw new Error(report.cleanup_proof_status === "approved"
-      ? "This report already has an approved cleanup proof."
-      : "A cleanup proof is already waiting for admin verification.");
   }
 
   // Supabase stores only this Cloudinary secure URL; no image bytes go to Supabase Storage.

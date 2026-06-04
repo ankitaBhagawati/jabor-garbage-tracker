@@ -178,6 +178,7 @@ grant insert (
   waste_type,
   description,
   photo_url,
+  status,
   lat,
   lng
 ) on public.reports to anon, authenticated;

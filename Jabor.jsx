@@ -1100,7 +1100,7 @@ export default function Jabor() {
         mp: preview.mp?.name || "Unknown",   mp_party:  preview.mp?.party  || "Unknown",
         area: form.area.trim(), landmark: form.landmark.trim(),
         waste_type: form.waste_type, description: form.description.trim(),
-        lat: null, lng: null, photo_url, status: "verified",
+        lat: null, lng: null, photo_url,
       };
       await db.insertReport(payload);
       const now = new Date().toISOString();
