@@ -1131,7 +1131,7 @@ export default function Jabor() {
         @keyframes popIn   { from{opacity:0;transform:scale(.85)} to{opacity:1;transform:scale(1)} }
         @keyframes loaderFade { from{opacity:1;filter:blur(0)} to{opacity:0;filter:blur(8px)} }
         @keyframes logoLift { from{opacity:0;transform:translateY(16px) scale(.92)} to{opacity:1;transform:translateY(0) scale(1)} }
-        @keyframes wordFade { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes wordFade { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
         @keyframes quoteFloat { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
         .slide-in { animation: slideIn .35s ease; }
         .pop-in   { animation: popIn .4s cubic-bezier(.34,1.56,.64,1); }
@@ -1184,9 +1184,10 @@ export default function Jabor() {
         .startup-title { font-family:'Sora',sans-serif; font-size:34px; font-weight:900; letter-spacing:-.04em; color:#0F172A; }
         .startup-subtitle { color:#006C49; font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
         .typed-headline { display:flex; justify-content:center; flex-wrap:wrap; gap:.3em; font-family:'Sora',sans-serif; font-size:48px; font-weight:900; line-height:1.12; letter-spacing:-.045em; margin-bottom:10px; }
-        .typed-word { display:inline-block; opacity:0; animation:wordFade 1.1s ease forwards; }
-        .typed-word:nth-child(2) { animation-delay:1s; }
-        .typed-word:nth-child(3) { animation-delay:2s; }
+        .typed-word { display:inline-block; opacity:0; animation:wordFade .8s cubic-bezier(.22,1,.36,1) forwards; }
+        .typed-word:nth-child(1) { animation-delay:1.75s; }
+        .typed-word:nth-child(2) { animation-delay:2.25s; }
+        .typed-word:nth-child(3) { animation-delay:2.75s; }
         .quote-panel { position:relative; overflow:hidden; border:1px solid #BBCABF; background:linear-gradient(135deg,#FFFFFF,#E8F0E9); border-radius:16px; padding:34px 26px; box-shadow:0 12px 32px rgba(0,108,73,.08); }
         .quote-mark { font-family:'Sora',sans-serif; color:#10B981; font-size:48px; line-height:1; }
         .quote-text { animation:quoteFloat .55s ease both; font-family:'Sora',sans-serif; font-size:24px; line-height:1.45; font-weight:700; letter-spacing:-.025em; color:#161D19; }
