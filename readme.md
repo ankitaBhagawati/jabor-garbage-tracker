@@ -1,8 +1,8 @@
 # 🗑️ Jabor — Assam Garbage Tracker
 
-> **Report. Map. Shame.**
+> **Report. Track. Clean.**
 
-A civic accountability web app for reporting illegal garbage dumps across Assam. Every report is mapped to the responsible MLA and MP, creating a live public record of accountability.
+A statewide garbage reporting and tracking web app for Assam. Anyone can report a garbage spot with a photo, location details, and waste type. Admin-verified reports appear publicly so active and cleaned locations can be tracked clearly.
 
 Built by [@Tech_Bagwitty](https://instagram.com/tech_bagwitty)
 
@@ -12,11 +12,11 @@ Built by [@Tech_Bagwitty](https://instagram.com/tech_bagwitty)
 
 - **📸 Anonymous Reporting** — Submit garbage reports in under 60 seconds, no login required
 - **🗺️ Live Map** — All reports plotted on a real Assam state map
-- **🏛️ Politician Tagging** — Every report automatically tags the responsible MLA and MP
-- **🏴 Board of Shame** — Live rankings of MLAs and MPs by number of reports
+- **✅ Admin Verification** — Reports appear publicly after admin review
+- **🧹 Cleanup Proof** — Citizens can upload cleanup proof for active reports
 - **📱 Mobile-first** — Native app feel with bottom navigation and FAB button
-- **🔥 Accountability Hotspots** — Top constituencies ranked by report count
-- **📋 Public Feed** — All reports visible to everyone
+- **🔥 Reported Hotspots** — Top reported areas ranked by report count
+- **📋 Public Feed** — Active and cleaned reports visible to everyone
 
 ---
 
@@ -58,6 +58,24 @@ Open [http://localhost:5173](http://localhost:5173)
 ---
 
 ## 🗄️ Supabase Setup
+
+Run both SQL files in the Supabase SQL Editor:
+
+1. `supabase/jabor-v2-migration.sql`
+2. `supabase/jabor-auth-and-cleanup-proof.sql`
+3. `supabase/jabor-public-report-insert.sql`
+
+### Admin Authentication
+
+Create an admin user in **Supabase Dashboard → Authentication → Users**, then set the user's app metadata to:
+
+```json
+{
+  "role": "admin"
+}
+```
+
+The `/admin` route uses Supabase email/password authentication. Admin authorization is enforced by RLS using `app_metadata.role`; do not use user metadata for roles.
 
 ### Database Tables
 
@@ -120,22 +138,26 @@ create view public_reports as
   where r.is_deleted = false;
 ```
 
-### Storage
+### Cloudinary Image Storage
 
-1. Create a bucket named `garbage-photos`
-2. Add these RLS policies:
+Jabor uploads report and cleanup proof images to Cloudinary. Supabase stores only the returned Cloudinary `secure_url` in `reports.photo_url` and `cleanup_proofs.image_url`.
 
-```sql
--- Allow anonymous uploads
-CREATE POLICY "Allow anon uploads" ON storage.objects
-  FOR INSERT TO anon
-  WITH CHECK (bucket_id = 'garbage-photos');
+1. In Cloudinary, create an **unsigned** upload preset.
+2. Add these values to `.env`:
 
--- Allow public reads
-CREATE POLICY "Allow public reads" ON storage.objects
-  FOR SELECT TO anon
-  USING (bucket_id = 'garbage-photos');
+```bash
+CLOUDINARY_CLOUD_NAME=dqqajkvpn
+CLOUDINARY_UPLOAD_PRESET=jabor_uploads
 ```
+
+Do not add `CLOUDINARY_API_SECRET` to the frontend. The browser upload flow does not need it.
+
+The existing database columns remain intentionally unchanged:
+
+- `reports.photo_url` stores the Cloudinary report image URL.
+- `cleanup_proofs.image_url` stores the Cloudinary cleanup proof URL.
+- `area` and `landmark` store the report address.
+- `lat` and `lng` store coordinates when location capture is available.
 
 ### RLS Policies for Tables
 
@@ -196,7 +218,7 @@ Live URL will be something like `jabor.vercel.app`
 
 ## ⚠️ Disclaimer
 
-MLA and MP mappings are sourced from publicly available internet data and may not be fully accurate. This project is not affiliated with any government body. Data will be updated after the 2026 Assam Legislative Assembly election results.
+Jabor is not affiliated with any government body. Public reports are user-submitted and should be reviewed before operational use.
 
 ---
 
@@ -205,10 +227,10 @@ MLA and MP mappings are sourced from publicly available internet data and may no
 Pull requests welcome! Some ideas:
 
 - [ ] GPS-based auto-constituency detection (needs Assam GeoJSON boundary file)
-- [ ] Admin panel for MLA data updates post-2026 elections
+- [ ] Admin panel for report review and cleanup verification
 - [ ] Share link per report
 - [ ] WhatsApp share button
-- [ ] Email/SMS alerts to MLAs
+- [ ] Email/SMS alerts for admins
 
 ---
 
@@ -218,4 +240,4 @@ MIT — free to use, modify and deploy.
 
 ---
 
-*Made with ❤️ for Assam · Report garbage, hold power accountable*
+*Made with ❤️ for Assam · Report garbage, track cleanup*
