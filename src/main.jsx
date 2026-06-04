@@ -14,9 +14,10 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.error) {
       return (
-        <pre style={{ whiteSpace: "pre-wrap", padding: 24, fontFamily: "monospace" }}>
-          {String(this.state.error?.stack || this.state.error)}
-        </pre>
+        <div style={{ padding: 24, fontFamily: "sans-serif" }}>
+          <h1 style={{ fontSize: 20, marginBottom: 8 }}>Jabor could not start</h1>
+          <p>Please refresh the page or try again later.</p>
+        </div>
       );
     }
 
@@ -38,9 +39,10 @@ async function boot() {
     );
   } catch (error) {
     root.render(
-      <pre style={{ whiteSpace: "pre-wrap", padding: 24, fontFamily: "monospace" }}>
-        {String(error?.stack || error)}
-      </pre>
+      <div style={{ padding: 24, fontFamily: "sans-serif" }}>
+        <h1 style={{ fontSize: 20, marginBottom: 8 }}>Jabor could not start</h1>
+        <p>Please refresh the page or try again later.</p>
+      </div>
     );
   }
 }

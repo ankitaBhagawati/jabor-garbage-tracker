@@ -1,4 +1,4 @@
-import { SUPA_KEY, SUPA_URL } from "./supabaseRest.js";
+import { assertSupabaseConfig, SUPA_KEY, SUPA_URL } from "./supabaseRest.js";
 
 const SESSION_KEY = "jabor_supabase_session";
 
@@ -26,6 +26,7 @@ export function isAdminSession(session = getStoredSession()) {
 }
 
 export async function signInAdmin(email, password) {
+  assertSupabaseConfig();
   const res = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: SUPA_KEY, "Content-Type": "application/json" },
@@ -42,6 +43,7 @@ export async function signInAdmin(email, password) {
 }
 
 export async function signOutAdmin() {
+  assertSupabaseConfig();
   const token = getAccessToken();
   saveSession(null);
   if (!token) return;

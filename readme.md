@@ -1,73 +1,89 @@
-# 🗑️ Jabor — Assam Garbage Tracker
+# Jabor
 
-> **Report. Track. Clean.**
+**Version:** 2 Beta
+**Release type:** Public Beta
 
-A statewide garbage reporting and tracking web app for Assam. Anyone can report a garbage spot with a photo, location details, and waste type. Admin-verified reports appear publicly so active and cleaned locations can be tracked clearly.
+Jabor is an Assam garbage reporting and tracking app. It allows people to report garbage issues with location details and image proof, follow active reports, and see cleanup progress after admin verification.
 
-Built by [@Tech_Bagwitty](https://instagram.com/tech_bagwitty)
+This release is intended for public testing. User feedback will guide the next improvements.
 
----
+## Purpose
 
-## ✨ Features
+Jabor helps make local garbage issues visible and trackable by allowing people in Assam to:
 
-- **📸 Anonymous Reporting** — Submit garbage reports in under 60 seconds, no login required
-- **🗺️ Live Map** — All reports plotted on a real Assam state map
-- **✅ Admin Verification** — Reports appear publicly after admin review
-- **🧹 Cleanup Proof** — Citizens can upload cleanup proof for active reports
-- **📱 Mobile-first** — Native app feel with bottom navigation and FAB button
-- **🔥 Reported Hotspots** — Top reported areas ranked by report count
-- **📋 Public Feed** — Active and cleaned reports visible to everyone
+- Submit a garbage report with a photo, area, district, and waste type.
+- View active garbage reports in a public feed.
+- Reply to active reports with cleanup proof.
+- See cleaned reports after an admin approves the cleanup proof.
 
----
+## Tech Stack
 
-## 🛠️ Tech Stack
+- React 18
+- Vite 8
+- Supabase Database, Auth, REST API, and Row Level Security
+- Cloudinary unsigned browser uploads
+- Vercel deployment
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 18 + Vite |
-| Database | Supabase (PostgreSQL) |
-| Storage | Supabase Storage |
-| Hosting | Vercel |
-| Fonts | Sora, DM Sans, DM Mono |
+## Main Features
 
----
+- Anonymous public garbage reporting
+- Cloudinary image upload with browser-side resize and WebP compression
+- Active and cleaned public report feeds
+- Location, district, waste type, and date filters
+- Cleanup proof submissions
+- Supabase Auth admin login
+- Admin-only report moderation and cleanup proof verification
+- Responsive dashboard, report form, report details, and admin pages
 
-## 🚀 Getting Started
+## Security Model
 
-### 1. Clone the repo
+- Supabase stores only Cloudinary `secure_url` values, not image files.
+- The frontend uses only public-safe environment variables.
+- Cloudinary uploads use an unsigned upload preset.
+- Admin authorization uses Supabase Auth and `app_metadata.role = "admin"`.
+- Supabase Row Level Security protects admin-only updates and deletes.
+- Public users can insert reports and cleanup proofs only through restricted columns and policies.
+- Never expose or commit a Supabase `service_role` key, Cloudinary API secret, database password, or other private credential.
 
-```bash
-git clone https://github.com/YOUR_USERNAME/jabor.git
-cd jabor
-```
+## Local Setup
 
-### 2. Install dependencies
+Use Node.js `20.19.0` or newer.
+
+### 1. Install dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Run locally
+### 2. Configure environment variables
 
-```bash
-npm run dev
+Create `.env.local` from `.env.example`:
+
+```env
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-supabase-publishable-or-anon-key
+VITE_CLOUDINARY_CLOUD_NAME=your-cloudinary-cloud-name
+VITE_CLOUDINARY_UPLOAD_PRESET=your-unsigned-upload-preset
 ```
 
-Open [http://localhost:5173](http://localhost:5173)
+Use placeholders in documentation and examples. Never commit real environment keys.
 
----
+### 3. Configure Cloudinary
 
-## 🗄️ Supabase Setup
+Create an unsigned upload preset for browser uploads. Restrict the preset in Cloudinary as appropriate for the public beta, including allowed formats and file-size limits.
 
-Run both SQL files in the Supabase SQL Editor:
+Do not add `CLOUDINARY_API_SECRET` to the frontend.
+
+### 4. Configure Supabase
+
+Run these SQL files in the Supabase SQL Editor in order:
 
 1. `supabase/jabor-v2-migration.sql`
 2. `supabase/jabor-auth-and-cleanup-proof.sql`
 3. `supabase/jabor-public-report-insert.sql`
+4. `supabase/jabor-v2-beta-security-hardening.sql`
 
-### Admin Authentication
-
-Create an admin user in **Supabase Dashboard → Authentication → Users**, then set the user's app metadata to:
+Create an admin user in Supabase Authentication, then set the user's **App Metadata**:
 
 ```json
 {
@@ -75,169 +91,63 @@ Create an admin user in **Supabase Dashboard → Authentication → Users**, the
 }
 ```
 
-The `/admin` route uses Supabase email/password authentication. Admin authorization is enforced by RLS using `app_metadata.role`; do not use user metadata for roles.
+Do not use user metadata for authorization roles.
 
-### Database Tables
-
-```sql
--- MLA list (126 MLAs across 35 districts)
-create table mla_list (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  party text,
-  constituency text unique,
-  district text,
-  lok_sabha_seat text,
-  phone text,
-  email text,
-  photo_url text,
-  updated_at timestamptz default now()
-);
-
--- MP list (14 Lok Sabha MPs)
-create table mp_list (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  party text,
-  lok_sabha_seat text unique,
-  phone text,
-  email text,
-  photo_url text,
-  updated_at timestamptz default now()
-);
-
--- Reports
-create table reports (
-  id uuid primary key default gen_random_uuid(),
-  constituency text,
-  district text,
-  lok_sabha_seat text,
-  mla text,
-  mla_party text,
-  mp text,
-  mp_party text,
-  area text,
-  landmark text,
-  waste_type text default 'mixed',
-  description text not null,
-  photo_url text,
-  lat float8,
-  lng float8,
-  status text default 'open',
-  is_deleted boolean default false,
-  created_at timestamptz default now()
-);
-
--- Public view (joins reports with live MLA/MP data)
-create view public_reports as
-  select r.*, m.name as mla, m.party as mla_party,
-         p.name as mp, p.party as mp_party
-  from reports r
-  left join mla_list m on m.constituency = r.constituency
-  left join mp_list p on p.lok_sabha_seat = r.lok_sabha_seat
-  where r.is_deleted = false;
-```
-
-### Cloudinary Image Storage
-
-Jabor uploads report and cleanup proof images to Cloudinary. Supabase stores only the returned Cloudinary `secure_url` in `reports.photo_url` and `cleanup_proofs.image_url`.
-
-1. In Cloudinary, create an **unsigned** upload preset.
-2. Add these values to `.env`:
+### 5. Start the app
 
 ```bash
-CLOUDINARY_CLOUD_NAME=dqqajkvpn
-CLOUDINARY_UPLOAD_PRESET=jabor_uploads
+npm run dev
 ```
 
-Do not add `CLOUDINARY_API_SECRET` to the frontend. The browser upload flow does not need it.
+## Build
 
-The existing database columns remain intentionally unchanged:
-
-- `reports.photo_url` stores the Cloudinary report image URL.
-- `cleanup_proofs.image_url` stores the Cloudinary cleanup proof URL.
-- `area` and `landmark` store the report address.
-- `lat` and `lng` store coordinates when location capture is available.
-
-### RLS Policies for Tables
-
-```sql
--- Reports: anyone can read, anyone can insert
-alter table reports enable row level security;
-create policy "Public read" on reports for select using (is_deleted = false);
-create policy "Public insert" on reports for insert with check (true);
-
--- MLA/MP: public read only
-alter table mla_list enable row level security;
-create policy "Public read" on mla_list for select using (true);
-
-alter table mp_list enable row level security;
-create policy "Public read" on mp_list for select using (true);
+```bash
+npm run build
 ```
 
----
+This project currently has no lint script.
 
-## 📁 Project Structure
+## Deployment
 
+Jabor can be deployed to Vercel:
+
+1. Link the repository to a Vercel project.
+2. Add all four `VITE_` environment variables for Production, Preview, and Development.
+3. Apply the Supabase security hardening SQL before opening the app publicly.
+4. Build and deploy the latest commit.
+5. Verify the public report flow and `/admin` login after deployment.
+
+## Pre-Release Data Cleanup
+
+To clear test report activity before deployment, review and run:
+
+```text
+supabase/jabor-v2-beta-test-data-cleanup.sql
 ```
-jabor/
-├── public/
-│   └── jabor-logo-2.png        # App logo
-├── src/
-│   ├── main.jsx                 # React entry point
-│   ├── Jabor.jsx                # Main app component
-│   └── style.css                # Global styles
-├── index.html
-├── package.json
-├── vite.config.js
-├── .gitignore
-└── README.md
-```
 
----
+The script preserves Supabase Auth users and lookup/master data such as `mla_list` and `mp_list`.
 
-## 🌐 Deployment (Vercel)
+After database cleanup, remove matching test images from the Cloudinary `jabor/reports` and `jabor/cleanup-proofs` folders. Cloudinary assets are not deleted automatically when database rows are removed.
 
-1. Push to GitHub
-2. Import repo at [vercel.com](https://vercel.com)
-3. Vercel auto-detects Vite — no config needed
-4. Deploy ✅
+## Public Beta Notes
 
-Live URL will be something like `jabor.vercel.app`
+Version 2 Beta is not the final production release. Public testing will be used to learn:
 
----
+- Whether the report form is clear and fast enough.
+- Whether location and waste-type information is useful.
+- Whether cleanup proof verification is understandable.
+- Which moderation, anti-spam, and operational tools are needed next.
 
-## 🗺️ Data Coverage
+Feedback from users will guide the next release.
 
-- **35 districts** across Assam
-- **126 MLAs** (2021 Assam Legislative Assembly)
-- **14 MPs** (Lok Sabha — Assam constituencies)
-- MLA mappings sourced from public data — will be updated after **2026 Assam elections**
+## Known Limitations
 
----
+- Anonymous reporting has no per-user ownership or edit history.
+- The frontend-only unsigned Cloudinary upload flow needs Cloudinary preset restrictions and monitoring.
+- Public beta moderation is manual.
+- There is no CAPTCHA, rate limiting, abuse scoring, or automated image moderation yet.
+- Database and Cloudinary cleanup are separate operations.
 
-## ⚠️ Disclaimer
+## License
 
-Jabor is not affiliated with any government body. Public reports are user-submitted and should be reviewed before operational use.
-
----
-
-## 🤝 Contributing
-
-Pull requests welcome! Some ideas:
-
-- [ ] GPS-based auto-constituency detection (needs Assam GeoJSON boundary file)
-- [ ] Admin panel for report review and cleanup verification
-- [ ] Share link per report
-- [ ] WhatsApp share button
-- [ ] Email/SMS alerts for admins
-
----
-
-## 📜 License
-
-MIT — free to use, modify and deploy.
-
----
-
-*Made with ❤️ for Assam · Report garbage, track cleanup*
+MIT

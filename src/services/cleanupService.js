@@ -5,14 +5,17 @@ export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimat
   if (!imageFile) throw new Error("Cleanup proof image is required.");
   if (!imageFile.type?.startsWith("image/")) throw new Error("Cleanup proof must be an image.");
 
-  const existingParams = new URLSearchParams();
-  existingParams.set("select", "id,status");
-  existingParams.set("report_id", `eq.${reportId}`);
-  existingParams.set("status", "in.(pending,approved)");
-  existingParams.set("limit", "1");
-  const existingProofs = await restJson(`/rest/v1/cleanup_proofs?${existingParams.toString()}`);
-  if (Array.isArray(existingProofs) && existingProofs.length > 0) {
-    throw new Error(existingProofs[0].status === "approved"
+  const reportParams = new URLSearchParams();
+  reportParams.set("select", "id,status,cleanup_proof_status");
+  reportParams.set("id", `eq.${reportId}`);
+  reportParams.set("limit", "1");
+  const reports = await restJson(`/rest/v1/public_reports?${reportParams.toString()}`);
+  const report = Array.isArray(reports) ? reports[0] : null;
+  if (!report || report.status !== "verified") {
+    throw new Error("This report is not available for cleanup proof.");
+  }
+  if (report.cleanup_proof_status === "pending" || report.cleanup_proof_status === "approved") {
+    throw new Error(report.cleanup_proof_status === "approved"
       ? "This report already has an approved cleanup proof."
       : "A cleanup proof is already waiting for admin verification.");
   }
@@ -29,7 +32,6 @@ export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimat
       image_url: imageUrl,
       cleaned_date_estimate: cleanedDateEstimate,
       submitted_by: submittedBy || null,
-      status: "pending",
     }),
   });
 }

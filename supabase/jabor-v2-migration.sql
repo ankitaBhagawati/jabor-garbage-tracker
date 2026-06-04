@@ -1,17 +1,10 @@
--- Jabor v2 MVP full Supabase bootstrap migration
+-- Jabor Version 2 Beta Supabase bootstrap migration
 -- Run in the target Supabase project's SQL Editor.
 --
 -- This migration is designed for a project where the reports table may have
 -- been deleted. It creates the app tables, v2 cleanup proof flow, public view,
--- indexes, demo RLS policies, Data API grants, and the storage bucket.
---
--- SECURITY NOTE:
--- The current frontend uses a password gate, not Supabase Auth. Because the
--- admin UI still calls Supabase with the anon key, this migration includes
--- permissive demo policies for admin update/delete operations. That is OK for
--- MVP/private demos, but not production-safe for a government pilot.
--- Before production: add Supabase Auth + admin roles and replace the broad
--- anon update/delete policies with role-based policies.
+-- indexes, least-privilege RLS policies, and Data API grants.
+-- Admin users must have raw_app_meta_data.role = 'admin'.
 
 create extension if not exists pgcrypto;
 
@@ -121,8 +114,7 @@ create index if not exists idx_cleanup_proofs_report_id on public.cleanup_proofs
 create index if not exists idx_cleanup_proofs_status on public.cleanup_proofs(status);
 create index if not exists idx_cleanup_proofs_created_at on public.cleanup_proofs(created_at);
 
--- Public read view used by the app. The view filters deleted reports only;
--- the app also filters verified/cleaned statuses in API calls.
+-- Public read view used by the app.
 drop view if exists public.public_reports;
 create view public.public_reports
 with (security_invoker = true)
@@ -152,15 +144,51 @@ select
 from public.reports r
 left join public.mla_list m on m.constituency = r.constituency
 left join public.mp_list p on p.lok_sabha_seat = r.lok_sabha_seat
-where r.is_deleted = false;
+where coalesce(r.is_deleted, false) = false
+  and r.status in ('verified', 'cleaned');
 
 -- Explicit Data API grants. New Supabase projects may not expose new tables to
 -- the REST API automatically without these grants.
 grant usage on schema public to anon, authenticated;
 grant select on public.public_reports to anon, authenticated;
 grant select on public.mla_list, public.mp_list to anon, authenticated;
-grant select, insert, update, delete on public.reports to anon, authenticated;
-grant select, insert, update on public.cleanup_proofs to anon, authenticated;
+
+revoke all on public.reports from anon, authenticated;
+revoke all on public.cleanup_proofs from anon, authenticated;
+
+grant select on public.reports to anon, authenticated;
+grant select (
+  report_id,
+  image_url,
+  status,
+  created_at,
+  updated_at
+) on public.cleanup_proofs to anon;
+grant select on public.cleanup_proofs to authenticated;
+grant insert (
+  constituency,
+  district,
+  lok_sabha_seat,
+  mla,
+  mla_party,
+  mp,
+  mp_party,
+  area,
+  landmark,
+  waste_type,
+  description,
+  photo_url,
+  lat,
+  lng
+) on public.reports to anon, authenticated;
+grant insert (
+  report_id,
+  image_url,
+  submitted_by,
+  cleaned_date_estimate
+) on public.cleanup_proofs to anon, authenticated;
+grant update, delete on public.reports to authenticated;
+grant update on public.cleanup_proofs to authenticated;
 
 alter table public.mla_list enable row level security;
 alter table public.mp_list enable row level security;
@@ -180,58 +208,94 @@ to anon, authenticated
 using (true);
 
 drop policy if exists "Public read reports demo" on public.reports;
-create policy "Public read reports demo"
+drop policy if exists "Public read reports" on public.reports;
+create policy "Public read reports"
 on public.reports for select
 to anon, authenticated
-using (is_deleted = false);
+using (
+  coalesce(is_deleted, false) = false
+  and status in ('verified', 'cleaned')
+);
 
 drop policy if exists "Public insert reports" on public.reports;
 create policy "Public insert reports"
 on public.reports for insert
 to anon, authenticated
 with check (
-  coalesce(status, 'verified') = 'verified'
+  status = 'verified'
   and coalesce(is_deleted, false) = false
+  and assigned_to is null
+  and rejected_at is null
+  and nullif(btrim(district), '') is not null
+  and nullif(btrim(constituency), '') is not null
+  and nullif(btrim(area), '') is not null
+  and photo_url like 'https://res.cloudinary.com/%'
 );
 
--- Demo-only policy: needed because current admin uses frontend password gate.
 drop policy if exists "Demo admin update reports" on public.reports;
-create policy "Demo admin update reports"
-on public.reports for update
-to anon, authenticated
-using (true)
-with check (true);
+drop policy if exists "Admin read reports" on public.reports;
+create policy "Admin read reports"
+on public.reports for select
+to authenticated
+using ((select auth.jwt()->'app_metadata'->>'role') = 'admin');
 
--- Demo-only policy: manual deletion of rejected reports older than 7 days.
+drop policy if exists "Admin update reports" on public.reports;
+create policy "Admin update reports"
+on public.reports for update
+to authenticated
+using ((select auth.jwt()->'app_metadata'->>'role') = 'admin')
+with check ((select auth.jwt()->'app_metadata'->>'role') = 'admin');
+
 drop policy if exists "Demo admin delete rejected reports" on public.reports;
-create policy "Demo admin delete rejected reports"
+drop policy if exists "Admin delete rejected reports" on public.reports;
+create policy "Admin delete rejected reports"
 on public.reports for delete
-to anon, authenticated
+to authenticated
 using (
+  (select auth.jwt()->'app_metadata'->>'role') = 'admin'
+  and
   status = 'rejected'
   and rejected_at is not null
   and rejected_at < now() - interval '7 days'
 );
 
 drop policy if exists "Public read cleanup proofs demo" on public.cleanup_proofs;
-create policy "Public read cleanup proofs demo"
+drop policy if exists "Public read approved cleanup proofs" on public.cleanup_proofs;
+create policy "Public read approved cleanup proofs"
 on public.cleanup_proofs for select
 to anon, authenticated
-using (true);
+using (status = 'approved');
 
 drop policy if exists "Public insert cleanup proofs" on public.cleanup_proofs;
 create policy "Public insert cleanup proofs"
 on public.cleanup_proofs for insert
 to anon, authenticated
-with check (coalesce(status, 'pending') = 'pending');
+with check (
+  status = 'pending'
+  and nullif(btrim(cleaned_date_estimate), '') is not null
+  and image_url like 'https://res.cloudinary.com/%'
+  and exists (
+    select 1
+    from public.reports report
+    where report.id = report_id
+      and report.status = 'verified'
+      and coalesce(report.is_deleted, false) = false
+  )
+);
 
--- Demo-only policy: needed because current admin uses frontend password gate.
+drop policy if exists "Admin read cleanup proofs" on public.cleanup_proofs;
+create policy "Admin read cleanup proofs"
+on public.cleanup_proofs for select
+to authenticated
+using ((select auth.jwt()->'app_metadata'->>'role') = 'admin');
+
 drop policy if exists "Demo admin update cleanup proofs" on public.cleanup_proofs;
-create policy "Demo admin update cleanup proofs"
+drop policy if exists "Admin update cleanup proofs" on public.cleanup_proofs;
+create policy "Admin update cleanup proofs"
 on public.cleanup_proofs for update
-to anon, authenticated
-using (true)
-with check (true);
+to authenticated
+using ((select auth.jwt()->'app_metadata'->>'role') = 'admin')
+with check ((select auth.jwt()->'app_metadata'->>'role') = 'admin');
 
 -- Compatibility: if old rows exist with status=open, make them visible as active.
 update public.reports

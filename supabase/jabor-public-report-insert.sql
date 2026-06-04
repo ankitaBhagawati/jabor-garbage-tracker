@@ -5,7 +5,24 @@
 
 alter table public.reports enable row level security;
 grant usage on schema public to anon, authenticated;
-grant insert on public.reports to anon, authenticated;
+
+revoke insert on public.reports from anon, authenticated;
+grant insert (
+  constituency,
+  district,
+  lok_sabha_seat,
+  mla,
+  mla_party,
+  mp,
+  mp_party,
+  area,
+  landmark,
+  waste_type,
+  description,
+  photo_url,
+  lat,
+  lng
+) on public.reports to anon, authenticated;
 
 drop policy if exists "Public insert reports" on public.reports;
 create policy "Public insert reports"
@@ -15,6 +32,12 @@ to anon, authenticated
 with check (
   status = 'verified'
   and coalesce(is_deleted, false) = false
+  and assigned_to is null
+  and rejected_at is null
+  and nullif(btrim(district), '') is not null
+  and nullif(btrim(constituency), '') is not null
+  and nullif(btrim(area), '') is not null
+  and photo_url like 'https://res.cloudinary.com/%'
 );
 
 select policyname, roles, cmd, with_check

@@ -94,12 +94,19 @@ left join lateral (
   order by proof.updated_at desc, proof.created_at desc
   limit 1
 ) approved_proof on true
-where r.is_deleted = false;
+where coalesce(r.is_deleted, false) = false
+  and r.status in ('verified', 'cleaned');
 
 grant select on public.public_reports to anon, authenticated;
 
 drop policy if exists "Demo admin update reports" on public.reports;
 drop policy if exists "Demo admin delete rejected reports" on public.reports;
+drop policy if exists "Admin read reports" on public.reports;
+create policy "Admin read reports"
+on public.reports for select
+to authenticated
+using ((select auth.jwt()->'app_metadata'->>'role') = 'admin');
+
 drop policy if exists "Admin update reports" on public.reports;
 create policy "Admin update reports"
 on public.reports for update
@@ -124,6 +131,23 @@ create policy "Public read approved cleanup proofs"
 on public.cleanup_proofs for select
 to anon, authenticated
 using (status = 'approved');
+
+drop policy if exists "Public insert cleanup proofs" on public.cleanup_proofs;
+create policy "Public insert cleanup proofs"
+on public.cleanup_proofs for insert
+to anon, authenticated
+with check (
+  status = 'pending'
+  and nullif(btrim(cleaned_date_estimate), '') is not null
+  and image_url like 'https://res.cloudinary.com/%'
+  and exists (
+    select 1
+    from public.reports report
+    where report.id = report_id
+      and report.status = 'verified'
+      and coalesce(report.is_deleted, false) = false
+  )
+);
 
 drop policy if exists "Admin read cleanup proofs" on public.cleanup_proofs;
 create policy "Admin read cleanup proofs"

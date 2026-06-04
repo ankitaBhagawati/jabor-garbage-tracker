@@ -1,5 +1,11 @@
-export const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || "https://uefijiwklnelmwcipwku.supabase.co";
-export const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVlZmlqaXdrbG5lbG13Y2lwd2t1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NjI0MTAsImV4cCI6MjA5NDQzODQxMH0.sI8MQgkyCegNhUrZJT8fvqOWLxi24t8eSPxiJo7t21g";
+export const SUPA_URL = import.meta.env.VITE_SUPABASE_URL || "";
+export const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+
+export function assertSupabaseConfig() {
+  if (!SUPA_URL || !SUPA_KEY) {
+    throw new Error("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
+  }
+}
 
 export const REST_HEADERS = {
   apikey: SUPA_KEY,
@@ -7,6 +13,7 @@ export const REST_HEADERS = {
 };
 
 export function requestHeaders() {
+  assertSupabaseConfig();
   let accessToken = "";
   try {
     const session = JSON.parse(localStorage.getItem("jabor_supabase_session") || "null");
@@ -23,9 +30,7 @@ export function requestHeaders() {
 
 export function assertOk(res, message) {
   if (!res.ok) {
-    return res.text().then((body) => {
-      throw new Error(`${message}: ${res.status} ${body}`);
-    });
+    throw new Error(`${message}: ${res.status}`);
   }
   return res;
 }

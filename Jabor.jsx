@@ -19,6 +19,7 @@ import {
   signOutAdmin,
 } from "./src/services/authService.js";
 import {
+  assertSupabaseConfig,
   SUPA_KEY,
   SUPA_URL,
 } from "./src/services/supabaseRest.js";
@@ -31,63 +32,48 @@ const ASSAM_MAP_SRC = "data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUN
 const db = {
   async getMlas() {
     try {
+      assertSupabaseConfig();
       const res = await fetch(`${SUPA_URL}/rest/v1/mla_list?select=*&order=district.asc,constituency.asc`, { headers: H });
-      if (!res.ok) {
-        const msg = await res.text();
-        console.error("db.getMlas failed", res.status, msg);
-        return [];
-      }
+      if (!res.ok) return [];
       return res.json();
-    } catch (e) {
-      console.error("db.getMlas error", e);
+    } catch {
       return [];
     }
   },
   async getMla(constituency) {
     try {
+      assertSupabaseConfig();
       const res = await fetch(`${SUPA_URL}/rest/v1/mla_list?constituency=eq.${encodeURIComponent(constituency)}&select=*&limit=1`, { headers: H });
-      if (!res.ok) {
-        const msg = await res.text();
-        console.error("db.getMla failed", res.status, msg, constituency);
-        return null;
-      }
+      if (!res.ok) return null;
       const d = await res.json();
       return d[0] || null;
-    } catch (e) {
-      console.error("db.getMla error", e, constituency);
+    } catch {
       return null;
     }
   },
   async getMp(seat) {
     try {
+      assertSupabaseConfig();
       const res = await fetch(`${SUPA_URL}/rest/v1/mp_list?lok_sabha_seat=eq.${encodeURIComponent(seat)}&select=*&limit=1`, { headers: H });
-      if (!res.ok) {
-        const msg = await res.text();
-        console.error("db.getMp failed", res.status, msg, seat);
-        return null;
-      }
+      if (!res.ok) return null;
       const d = await res.json();
       return d[0] || null;
-    } catch (e) {
-      console.error("db.getMp error", e, seat);
+    } catch {
       return null;
     }
   },
   async getReports() {
     try {
+      assertSupabaseConfig();
       const res = await fetch(`${SUPA_URL}/rest/v1/public_reports?status=in.(verified,cleaned)&is_deleted=eq.false&order=created_at.desc&limit=200`, { headers: H });
-      if (!res.ok) {
-        const msg = await res.text();
-        console.error("db.getReports failed", res.status, msg);
-        return [];
-      }
+      if (!res.ok) return [];
       return res.json();
-    } catch (e) {
-      console.error("db.getReports error", e);
+    } catch {
       return [];
     }
   },
   async insertReport(data) {
+    assertSupabaseConfig();
     const res = await fetch(`${SUPA_URL}/rest/v1/reports`, {
       method: "POST",
       // Public users can insert reports but read them through public_reports.
@@ -569,7 +555,7 @@ function AdminLoginGate({ onUnlock }) {
       </div>
       <form onSubmit={handleSubmit}>
         <label className="lbl">ADMIN EMAIL</label>
-        <input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@example.com" required />
+        <input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Admin email" required />
         <label className="lbl" style={{ marginTop: 12 }}>PASSWORD</label>
         <input
           className="inp"
@@ -912,6 +898,7 @@ function AdminDashboard({ onChanged }) {
 
 
 export default function Jabor() {
+  assertSupabaseConfig();
   const isAdminRoute = window.location.pathname === "/admin" || window.location.hash === "#admin";
   const [view,           setView]           = useState(isAdminRoute ? "admin" : "dashboard");
   const [reports,        setReports]        = useState([]);
@@ -1003,8 +990,7 @@ export default function Jabor() {
         fetchCleanedReports(queryFilters),
       ]);
       setReports([...(Array.isArray(active) ? active : []), ...(Array.isArray(cleaned) ? cleaned : [])]);
-    } catch (e) {
-      console.error("loadPublicReports failed", e);
+    } catch {
       const fallback = await db.getReports();
       setReports(Array.isArray(fallback) ? fallback : []);
     } finally {
@@ -1084,7 +1070,7 @@ export default function Jabor() {
         mp: preview.mp?.name || "Unknown",   mp_party:  preview.mp?.party  || "Unknown",
         area: form.area.trim(), landmark: form.landmark.trim(),
         waste_type: form.waste_type, description: form.description.trim(),
-        lat: null, lng: null, photo_url: photoUrl, status: "verified", is_deleted: false,
+        lat: null, lng: null, photo_url: photoUrl,
       };
       await db.insertReport(payload);
       await loadPublicReports(feedFilters);

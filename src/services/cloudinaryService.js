@@ -1,16 +1,12 @@
-const CLOUDINARY_CLOUD_NAME =
-  import.meta.env.VITE_CLOUDINARY_CLOUD_NAME ||
-  __CLOUDINARY_CLOUD_NAME__;
-const CLOUDINARY_UPLOAD_PRESET =
-  import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET ||
-  __CLOUDINARY_UPLOAD_PRESET__;
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "";
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "";
 
 const MAX_WIDTH = 1000;
 const TARGET_BYTES = 300 * 1024;
 
 function assertCloudinaryConfig() {
   if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
-    throw new Error("Cloudinary is not configured. Add CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET.");
+    throw new Error("Cloudinary is not configured. Add the required VITE_CLOUDINARY environment variables.");
   }
 }
 
