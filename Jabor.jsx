@@ -65,7 +65,12 @@ const db = {
   async getReports() {
     try {
       assertSupabaseConfig();
-      const res = await fetch(`${SUPA_URL}/rest/v1/public_reports?status=in.(verified,cleaned)&is_deleted=eq.false&order=created_at.desc&limit=200`, { headers: H });
+      const select = [
+        "id", "constituency", "district", "lok_sabha_seat", "mla", "mla_party", "mp", "mp_party",
+        "area", "landmark", "waste_type", "description", "photo_url", "lat", "lng", "status",
+        "assigned_to", "rejected_at", "is_deleted", "created_at", "updated_at",
+      ].join(",");
+      const res = await fetch(`${SUPA_URL}/rest/v1/reports?select=${select}&status=in.(verified,pending,active,reported,open,cleaned)&is_deleted=eq.false&order=created_at.desc&limit=200`, { headers: H });
       if (!res.ok) return [];
       return res.json();
     } catch {
@@ -95,6 +100,25 @@ const db = {
     return uploadImageToCloudinary(file, "jabor/reports");
   },
 };
+
+function logReportPhotos(source, reports) {
+  if (!import.meta.env.DEV) return;
+  const safeReports = Array.isArray(reports) ? reports : [];
+  console.debug(`[Jabor] ${source}`, safeReports);
+  safeReports.forEach(report => {
+    console.debug(`[Jabor] ${source} report ${report.id || "unknown"} photo_url`, report.photo_url || null);
+  });
+}
+
+function withPreservedReport(fetchedReports, preservedReport) {
+  const reports = Array.isArray(fetchedReports) ? fetchedReports : [];
+  if (!preservedReport) return reports;
+  const alreadyLoaded = reports.some(report =>
+    (preservedReport.id && report.id === preservedReport.id) ||
+    (preservedReport.photo_url && report.photo_url === preservedReport.photo_url)
+  );
+  return alreadyLoaded ? reports : [preservedReport, ...reports];
+}
 
 const WASTE = [
   { id: "mixed",        label: "Mixed Waste",         icon: "\u{1F5D1}\uFE0F", color: "#9CA3AF" },
@@ -325,17 +349,17 @@ function AssamMap({ reports }) {
 
 // ── REPORT CARD — with thumbnail + MLA/MP on separate lines
 function ReportCard({ r, expanded, onClick, showCleanupAction = false, cleanupOpen, onToggleCleanup, onCleanupSubmitted }) {
-  const w = WASTE.find(t => t.id === r.waste_type) || WASTE[0];
-  const isCleaned = r.status === "cleaned";
+  const report = r;
+  const w = WASTE.find(t => t.id === report.waste_type) || WASTE[0];
+  const isCleaned = report.status === "cleaned";
   const leaderFallback = "Not mapped yet";
   return (
     <div className="rcard" onClick={onClick}>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-        {/* FIX 6: Show photo thumbnail if available, else waste icon */}
-        {r.photo_url ? (
+        {report.photo_url ? (
           <div className="report-photo-stack">
-            <img src={r.photo_url} alt="Garbage report" />
-            {isCleaned && r.cleanup_photo_url && <img src={r.cleanup_photo_url} alt="Approved cleanup proof" />}
+            <img src={report.photo_url} alt="Garbage report" />
+            {isCleaned && report.cleanup_photo_url && <img src={report.cleanup_photo_url} alt="Approved cleanup proof" />}
           </div>
         ) : (
           <div style={{ width: 58, height: 58, borderRadius: 10, flexShrink: 0, background: w.color + "20", border: `1px solid ${w.color}40`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>
@@ -399,7 +423,7 @@ function ReportCard({ r, expanded, onClick, showCleanupAction = false, cleanupOp
             <>
               {r.cleanup_photo_url && (
                 <div className="cleaned-photo-pair">
-                  <figure><img src={r.photo_url} alt="Garbage before cleanup" /><figcaption>Before</figcaption></figure>
+                  {report.photo_url && <figure><img src={report.photo_url} alt="Garbage before cleanup" /><figcaption>Before</figcaption></figure>}
                   <figure><img src={r.cleanup_photo_url} alt="Area after cleanup" /><figcaption>After</figcaption></figure>
                 </div>
               )}
@@ -657,6 +681,7 @@ function ReportsManagementView({ onChanged, onPhotoClick }) {
                     <img className="admin-thumb" src={report.photo_url} alt="Garbage report" />
                   </button>
                 )}
+                {!report.photo_url && <div className="admin-thumb admin-thumb-fallback">No report image</div>}
                 {report.cleanup_photo_url && (
                   <button className="photo-btn" type="button" onClick={() => onPhotoClick?.(report.cleanup_photo_url)} aria-label="Open cleanup photo">
                     <img className="admin-thumb" src={report.cleanup_photo_url} alt="Approved cleanup proof" />
@@ -766,6 +791,7 @@ function CleanupVerificationQueue({ onChanged, onPhotoClick }) {
                       <img className="admin-proof-img" src={report.photo_url} alt="Original report" />
                     </button>
                   )}
+                  {!report.photo_url && <div className="admin-proof-img admin-thumb-fallback">No report image</div>}
                   <strong>{report.constituency || "Unknown"} · {report.district || "Unknown"}</strong>
                   <p style={{ color: "#3C4A42", fontSize: 12 }}>📍 {[report.area, report.landmark].filter(Boolean).join(" · ") || "No area details"}</p>
                   <p style={{ fontSize: 13, color: "#161D19", lineHeight: 1.5 }}>{report.description || "No description."}</p>
@@ -981,7 +1007,7 @@ export default function Jabor() {
     };
   };
 
-  const loadPublicReports = async (filters = feedFilters) => {
+  const loadPublicReports = async (filters = feedFilters, preservedReport = null) => {
     setLoadingRep(true);
     try {
       const queryFilters = normalizeFilters(filters);
@@ -989,10 +1015,13 @@ export default function Jabor() {
         fetchActiveReports(queryFilters),
         fetchCleanedReports(queryFilters),
       ]);
-      setReports([...(Array.isArray(active) ? active : []), ...(Array.isArray(cleaned) ? cleaned : [])]);
+      const fetchedReports = [...(Array.isArray(active) ? active : []), ...(Array.isArray(cleaned) ? cleaned : [])];
+      logReportPhotos("public reports", fetchedReports);
+      setReports(withPreservedReport(fetchedReports, preservedReport));
     } catch {
       const fallback = await db.getReports();
-      setReports(Array.isArray(fallback) ? fallback : []);
+      logReportPhotos("fallback public reports", fallback);
+      setReports(withPreservedReport(fallback, preservedReport));
     } finally {
       setLoadingRep(false);
     }
@@ -1061,7 +1090,8 @@ export default function Jabor() {
     setSubmitting(true);
     try {
       setSubmitStep("uploading");
-      const photoUrl = await db.uploadPhoto(form.photo);
+      const photo_url = await db.uploadPhoto(form.photo);
+      if (import.meta.env.DEV) console.debug("[Jabor] uploaded report photo_url", photo_url);
       setSubmitStep("saving");
       const payload = {
         district: form.district, constituency: form.constituency,
@@ -1070,10 +1100,20 @@ export default function Jabor() {
         mp: preview.mp?.name || "Unknown",   mp_party:  preview.mp?.party  || "Unknown",
         area: form.area.trim(), landmark: form.landmark.trim(),
         waste_type: form.waste_type, description: form.description.trim(),
-        lat: null, lng: null, photo_url: photoUrl,
+        lat: null, lng: null, photo_url, status: "verified",
       };
       await db.insertReport(payload);
-      await loadPublicReports(feedFilters);
+      const now = new Date().toISOString();
+      const localReport = {
+        ...payload,
+        id: `local-${Date.now()}`,
+        status: "verified",
+        is_deleted: false,
+        created_at: now,
+        updated_at: now,
+      };
+      setReports(prev => withPreservedReport(prev, localReport));
+      await loadPublicReports(feedFilters, localReport);
       setPreview(null);
       setForm({ district: "", constituency: "", area: "", landmark: "", waste_type: "mixed", description: "", photo: null, photoPreview: null });
       setSubmitted(true);
@@ -1210,12 +1250,12 @@ export default function Jabor() {
         .reveal-on-scroll.is-visible { opacity:1; transform:translateY(0); }
         .footer-link { color:#CBD5E1; background:none; border:0; padding:0; text-align:left; font:inherit; font-size:14px; cursor:pointer; }
         .footer-link:hover { color:#6FFBBE; }
-        .report-photo-stack { width:58px; flex-shrink:0; display:flex; flex-direction:column; gap:4px; }
-        .report-photo-stack img { width:58px; height:58px; border-radius:10px; object-fit:cover; border:1px solid #BBCABF; }
+        .report-photo-stack { width:58px; min-width:58px; flex-shrink:0; display:flex; flex-direction:column; gap:4px; }
+        .report-photo-stack img { display:block; width:58px; height:58px; border-radius:10px; object-fit:cover; border:1px solid #BBCABF; background:#E8F0E9; }
         .report-photo-stack img + img { height:34px; border-color:#10B981; }
         .cleaned-photo-pair { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
         .cleaned-photo-pair figure { margin:0; }
-        .cleaned-photo-pair img { width:100%; height:130px; object-fit:cover; border-radius:9px; border:1px solid #BBCABF; }
+        .cleaned-photo-pair img { display:block; width:100%; height:130px; object-fit:cover; border-radius:9px; border:1px solid #BBCABF; background:#E8F0E9; }
         .cleaned-photo-pair figcaption { margin-top:3px; font-size:10px; color:#3C4A42; text-align:center; font-weight:800; text-transform:uppercase; letter-spacing:.05em; }
         @media (prefers-reduced-motion: reduce) {
           .reveal-on-scroll { opacity:1; transform:none; transition:none; }
@@ -1444,10 +1484,9 @@ export default function Jabor() {
                   <div className="card">
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                       <h3 style={{ fontSize: 15, fontWeight: 900 }}>Districts Needing Action</h3>
-                      <span style={{ fontSize: 10, color: "#64748B", fontFamily: "monospace" }}>3+ ACTIVE</span>
                     </div>
                     {!loadingRep && actionDistricts.length === 0
-                      ? <p style={{ color: "#3C4A42", fontSize: 13 }}>No district has more than 2 active reports right now.</p>
+                      ? <p style={{ color: "#3C4A42", fontSize: 13 }}>No district needs extra attention right now.</p>
                       : !loadingRep ? actionDistricts.map(([name, data], i) => (
                         <div key={name} style={{ marginBottom: i < actionDistricts.length - 1 ? 14 : 0 }}>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
@@ -1712,7 +1751,9 @@ export default function Jabor() {
                 <span style={{ fontSize: 12, fontFamily: "monospace", color: "#006C49", fontWeight: 800 }}>REPORT</span>
                 <button onClick={() => setSelReport(null)} style={{ background: "none", border: "none", color: "#006C49", cursor: "pointer", fontSize: 22, lineHeight: 1 }}>×</button>
               </div>
-              {selReport.photo_url && <img src={selReport.photo_url} alt="garbage" style={{ width: "100%", borderRadius: 12, marginBottom: 14, maxHeight: 260, objectFit: "cover" }} />}
+              {selReport.photo_url
+                ? <img src={selReport.photo_url} alt="garbage" style={{ width: "100%", borderRadius: 12, marginBottom: 14, maxHeight: 260, objectFit: "cover" }} />
+                : <div style={{ width: "100%", borderRadius: 12, marginBottom: 14, minHeight: 140, background: "#E8F0E9", border: "1px solid #BBCABF", color: "#3C4A42", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>No report image</div>}
               {selReport.cleanup_photo_url && <img src={selReport.cleanup_photo_url} alt="approved cleanup proof" style={{ width: "100%", borderRadius: 12, marginBottom: 14, maxHeight: 260, objectFit: "cover", border: "2px solid #10B981" }} />}
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                 <WIcon type={selReport.waste_type} size={18} />

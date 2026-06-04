@@ -95,11 +95,23 @@
 .admin-thumb {
   width: 92px;
   height: 92px;
+  display: block;
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid #bbcabf;
   background: #e8f0e9;
   flex-shrink: 0;
+}
+
+.admin-thumb-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3c4a42;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  padding: 8px;
 }
 
 .admin-photo-pair {
@@ -160,6 +172,7 @@
   width: 100%;
   max-width: 220px;
   height: 140px;
+  display: block;
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid #bbcabf;
