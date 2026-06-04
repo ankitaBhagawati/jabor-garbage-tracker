@@ -82,7 +82,9 @@ export async function fetchAdminReports(status = "") {
 export function hideReport(reportId) {
   return restJson(`/rest/v1/reports?id=eq.${encodeFilter(reportId)}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+    // Once is_deleted becomes true, public report SELECT policies intentionally
+    // hide the row. Do not ask PostgREST to return a row that is no longer readable.
+    headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify({
       is_deleted: true,
       updated_at: new Date().toISOString(),
