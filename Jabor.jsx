@@ -23,7 +23,7 @@ import {
   SUPA_KEY,
   SUPA_URL,
 } from "./src/services/supabaseRest.js";
-import { uploadImageToCloudinary } from "./src/services/cloudinaryService.js";
+import { uploadImageToCloudinary, validateUploadImage } from "./src/services/cloudinaryService.js";
 import {
   initGA,
   trackCleanupProofSubmission,
@@ -866,7 +866,23 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
   return (
     <form onSubmit={submit} className="cleanup-form">
       <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10, color: "#10B981" }}>Reply with cleanup proof</div>
-      <input className="inp" type="file" accept="image/*" onChange={e => setImage(e.target.files?.[0] || null)} />
+      <input
+        className="inp"
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        onChange={e => {
+          const file = e.target.files?.[0] || null;
+          try {
+            if (file) validateUploadImage(file, "Cleanup proof");
+            setImage(file);
+            setMessage("");
+          } catch (error) {
+            e.target.value = "";
+            setImage(null);
+            setMessage(error.message || "Please choose a valid cleanup proof image.");
+          }
+        }}
+      />
       <input
         className="inp"
         value={cleanedDateEstimate}
@@ -1088,12 +1104,11 @@ export default function Jabor() {
 
   const onPhoto = e => {
     const f = e.target.files[0]; if (!f) return;
-    if (!f.type?.startsWith("image/")) {
-      alert("Please choose a valid image file.");
-      return;
-    }
-    if (f.size > 10 * 1024 * 1024) {
-      alert("Photo must be smaller than 10 MB.");
+    try {
+      validateUploadImage(f, "Photo");
+    } catch (error) {
+      e.target.value = "";
+      alert(error.message || "Please choose a valid image file.");
       return;
     }
     const r = new FileReader();
@@ -1609,7 +1624,7 @@ export default function Jabor() {
                   <div style={{ fontSize: 12, color: "#3C4A42" }}>Required · Tap to upload</div>
                 </div>
               )}
-              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPhoto} />
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={onPhoto} />
             </div>
 
             {/* Location */}

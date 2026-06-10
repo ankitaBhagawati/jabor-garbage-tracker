@@ -1,9 +1,8 @@
 import { encodeFilter, restJson } from "./supabaseRest.js";
-import { uploadImageToCloudinary } from "./cloudinaryService.js";
+import { uploadImageToCloudinary, validateUploadImage } from "./cloudinaryService.js";
 
 export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimate, submittedBy = null) {
-  if (!imageFile) throw new Error("Cleanup proof image is required.");
-  if (!imageFile.type?.startsWith("image/")) throw new Error("Cleanup proof must be an image.");
+  validateUploadImage(imageFile, "Cleanup proof");
 
   const reportParams = new URLSearchParams();
   reportParams.set("select", "id,status");
