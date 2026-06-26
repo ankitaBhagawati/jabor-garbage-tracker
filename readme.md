@@ -21,7 +21,7 @@ Jabor helps make local garbage issues visible and trackable by allowing people i
 - React 18
 - Vite 8
 - Supabase Database, Auth, REST API, and Row Level Security
-- Cloudinary unsigned browser uploads
+- Cloudinary signed uploads through a Vercel serverless signature endpoint
 - Vercel deployment
 
 ## Main Features
@@ -39,7 +39,7 @@ Jabor helps make local garbage issues visible and trackable by allowing people i
 
 - Supabase stores only Cloudinary `secure_url` values, not image files.
 - The frontend uses only public-safe environment variables.
-- Cloudinary uploads use an unsigned upload preset.
+- Cloudinary uploads use server-generated signed upload parameters.
 - Admin authorization uses Supabase Auth and `app_metadata.role = "admin"`.
 - Supabase Row Level Security protects admin-only updates and deletes.
 - Public users can insert reports and cleanup proofs only through restricted columns and policies.
@@ -63,16 +63,22 @@ Create `.env.local` from `.env.example`:
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-publishable-or-anon-key
 VITE_CLOUDINARY_CLOUD_NAME=your-cloudinary-cloud-name
-VITE_CLOUDINARY_UPLOAD_PRESET=your-unsigned-upload-preset
+CLOUDINARY_API_KEY=your-cloudinary-api-key
+CLOUDINARY_API_SECRET=your-cloudinary-api-secret
 ```
 
 Use placeholders in documentation and examples. Never commit real environment keys.
 
 ### 3. Configure Cloudinary
 
-Create an unsigned upload preset for browser uploads. Restrict the preset in Cloudinary as appropriate for the public beta, including allowed formats and file-size limits.
+Use signed uploads only. The app signs uploads through `/api/cloudinary-signature` and allows only:
 
-Do not add `CLOUDINARY_API_SECRET` to the frontend.
+- `jabor/reports`
+- `jabor/cleanup-proofs`
+
+Restrict accepted upload formats to JPG, PNG, and WEBP. Do not use unsigned upload presets for public uploads.
+
+Do not expose `CLOUDINARY_API_SECRET` in client-side code or `VITE_` environment variables.
 
 ### 4. Configure Supabase
 
@@ -112,7 +118,7 @@ This project currently has no lint script.
 Jabor can be deployed to Vercel:
 
 1. Link the repository to a Vercel project.
-2. Add all four `VITE_` environment variables for Production, Preview, and Development.
+2. Add Supabase, Cloudinary cloud name, and server-side Cloudinary API variables for Production and Preview.
 3. Apply the Supabase security hardening SQL before opening the app publicly.
 4. Build and deploy the latest commit.
 5. Verify the public report flow and `/admin` login after deployment.
@@ -143,7 +149,6 @@ Feedback from users will guide the next release.
 ## Known Limitations
 
 - Anonymous reporting has no per-user ownership or edit history.
-- The frontend-only unsigned Cloudinary upload flow needs Cloudinary preset restrictions and monitoring.
 - Public beta moderation is manual.
 - There is no CAPTCHA, rate limiting, abuse scoring, or automated image moderation yet.
 - Database and Cloudinary cleanup are separate operations.

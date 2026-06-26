@@ -842,6 +842,10 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
 
   const submit = async e => {
     e.preventDefault();
+    if (!navigator.onLine) {
+      setMessage("You are offline. Please reconnect to submit cleanup proof.");
+      return;
+    }
     if (!image || !cleanedDateEstimate.trim()) {
       setMessage("Please add a cleanup photo and cleaning date estimate.");
       return;
@@ -1033,7 +1037,7 @@ export default function Jabor() {
           revealTarget(entry.target);
         }
       });
-    }, { threshold: 0.12 });
+    }, { threshold: 0, rootMargin: "0px 0px -8% 0px" });
     targets.forEach(target => observer.observe(target));
     requestAnimationFrame(() => {
       targets.forEach(target => {
@@ -1131,6 +1135,10 @@ export default function Jabor() {
   const goToReport = () => setAppView("report");
 
   const onSubmit = async () => {
+    if (!navigator.onLine) {
+      alert("You are offline. Please reconnect to submit the report.");
+      return;
+    }
     if (!form.district || !form.constituency || !form.area.trim()) {
       alert("Please fill District, Constituency and Area."); return;
     }

@@ -1,0 +1,6 @@
+<svg width="240" height="60" viewBox="0 0 240 60" xmlns="http://www.w3.org/2000/svg">
+  <path d="M15 45C15 42 18 38 22 35C22 32 25 28 30 28C35 28 38 31 40 34C43 32 48 32 52 35C56 38 58 42 58 45H15Z" fill="#10B981"/>
+  <path d="M28 38L32 38L32 42L28 42Z" fill="white" opacity="0.6"/>
+  <path d="M42 36C42 34 44 33 46 33C48 33 50 34 50 36V41H42V36Z" fill="white" opacity="0.6"/>
+  <text x="75" y="42" font-family="Sora, sans-serif" font-size="32" font-weight="700" fill="#0F172A">Jabor</text>
+</svg>

@@ -30,6 +30,16 @@ class ErrorBoundary extends React.Component {
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || import.meta.env.DEV) return;
+
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(error => {
+      console.warn("[Jabor] Service worker registration failed", error);
+    });
+  });
+}
+
 async function boot() {
   try {
     const { default: Jabor } = await import("../Jabor.jsx");
@@ -54,3 +64,4 @@ async function boot() {
 }
 
 boot();
+registerServiceWorker();
