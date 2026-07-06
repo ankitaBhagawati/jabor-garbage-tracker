@@ -197,6 +197,17 @@
   max-height: 90vh;
 }
 
+.rec-modal-inner {
+  position: relative;
+  width: min(560px, 96vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #dde4dd;
+  border-radius: 16px;
+  padding: 20px;
+}
+
 .admin-photo-modal-inner img {
   display: block;
   max-width: 100%;

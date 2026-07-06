@@ -24,6 +24,7 @@ import {
   SUPA_URL,
 } from "./src/services/supabaseRest.js";
 import { uploadImageToCloudinary, validateUploadImage } from "./src/services/cloudinaryService.js";
+import { executeActions, generateRecommendations } from "./src/services/agentService.js";
 import {
   initGA,
   trackCleanupProofSubmission,
@@ -75,7 +76,7 @@ const db = {
       const select = [
         "id", "constituency", "district", "lok_sabha_seat", "mla", "mla_party", "mp", "mp_party",
         "area", "landmark", "waste_type", "description", "photo_url", "lat", "lng", "status",
-        "assigned_to", "rejected_at", "is_deleted", "created_at", "updated_at",
+        "assigned_to", "rejected_at", "is_deleted", "created_at", "updated_at", "tweeted_at", "emailed_at",
       ].join(",");
       const res = await fetch(`${SUPA_URL}/rest/v1/reports?select=${select}&status=in.(verified,pending,active,reported,open,cleaned)&is_deleted=eq.false&order=created_at.desc&limit=200`, { headers: H });
       if (!res.ok) return [];
@@ -525,8 +526,19 @@ function Footer({ onAbout, onHowItWorks }) {
           <nav style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 180 }}>
             <button className="footer-link" type="button" onClick={onAbout}>About Jabor</button>
             <button className="footer-link" type="button" onClick={onHowItWorks}>How It Works</button>
-            <a href="mailto:ankitabhagawati21@gmail.com?subject=Jabor%20contact" style={{ color: "#CBD5E1", textDecoration: "none", fontSize: 14 }}>Contact us</a>
+            <a href="mailto:jaborassam@gmail.com?subject=Jabor%20contact" style={{ color: "#CBD5E1", textDecoration: "none", fontSize: 14 }}>Contact us</a>
             <a href="https://instagram.com/Tech_Bagwitty" target="_blank" rel="noopener noreferrer" style={{ color: "#CBD5E1", textDecoration: "none", fontSize: 14 }}>Built by @Tech_Bagwitty</a>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
+              <a href="https://x.com/jaborassam" target="_blank" rel="noopener noreferrer" title="@jaborassam on X" aria-label="Jabor on X" style={{ color: "#CBD5E1", display: "inline-flex" }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24h-6.66l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231 5.45-6.231Zm-1.161 17.52h1.833L7.084 4.126H5.117L17.083 19.77Z"/></svg>
+              </a>
+              <span title="Coming soon" aria-label="Instagram — coming soon" style={{ color: "#64748B", display: "inline-flex", cursor: "default" }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>
+              </span>
+              <span title="Coming soon" aria-label="Facebook — coming soon" style={{ color: "#64748B", display: "inline-flex", cursor: "default" }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M22 12a10 10 0 1 0-11.56 9.88v-6.99H7.9V12h2.54V9.8c0-2.5 1.49-3.89 3.77-3.89 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.77-1.63 1.56V12h2.78l-.44 2.89h-2.34v6.99A10 10 0 0 0 22 12Z"/></svg>
+              </span>
+            </div>
           </nav>
         </div>
         <div style={{ borderTop: "1px solid #1E293B", paddingTop: 22, fontSize: 13, color: "#64748B" }}>
@@ -612,7 +624,174 @@ function AdminEmpty({ icon, title, text }) {
   );
 }
 
+// AI recommendation review modal (human-in-the-loop step of the agentic RAG flow).
+function RecommendationModal({ report, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [rec, setRec] = useState(null);
+  const [tab, setTab] = useState("x");
+  const [caption, setCaption] = useState("");
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [executing, setExecuting] = useState("");
+  const [results, setResults] = useState([]);
+  const [tweetedAt, setTweetedAt] = useState(report.tweeted_at || null);
+  const [emailedAt, setEmailedAt] = useState(report.emailed_at || null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    generateRecommendations(report.id)
+      .then(data => {
+        if (cancelled) return;
+        setRec(data);
+        setCaption(data.caption || "");
+        setEmailTo((data.email?.to || []).join(", "));
+        setEmailSubject(data.email?.subject || "");
+        setEmailBody(data.email?.body || "");
+      })
+      .catch(e => { if (!cancelled) setError(e.message || "Could not generate recommendations."); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [report.id]);
+
+  const runAction = async (action, extra) => {
+    setExecuting(action);
+    setError("");
+    try {
+      const res = await executeActions({
+        auditId: rec.auditId,
+        reportId: report.id,
+        selectedActions: [action],
+        ...extra,
+      });
+      const rs = res.results || [];
+      setResults(prev => [...prev, ...rs]);
+      if (rs.some(r => r.action === "post_to_x" && r.status === "executed")) setTweetedAt(new Date().toISOString());
+      if (rs.some(r => r.action === "email_authority" && r.status === "executed")) setEmailedAt(new Date().toISOString());
+    } catch (e) {
+      setError(e.message || "Could not execute action.");
+    } finally {
+      setExecuting("");
+    }
+  };
+
+  const postX = () => runAction("post_to_x", { caption });
+  const sendEmail = () => runAction("email_authority", {
+    email: {
+      to: emailTo.split(",").map(s => s.trim()).filter(Boolean),
+      subject: emailSubject,
+      body: emailBody,
+    },
+  });
+
+  const sevColor = { high: "#DC2626", medium: "#D97706", low: "#16A34A" }[rec?.severity] || "#3C4A42";
+
+  return (
+    <div className="admin-photo-modal" onClick={onClose}>
+      <div className="rec-modal-inner" onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 900 }}>AI Post Recommendation</h2>
+          <button className="admin-photo-close" style={{ position: "static" }} onClick={onClose} aria-label="Close">×</button>
+        </div>
+
+        {loading && <div style={{ padding: "32px 0" }}><Spinner /><p style={{ textAlign: "center", color: "#3C4A42", fontSize: 13, marginTop: 10 }}>Retrieving context, reasoning, and drafting…</p></div>}
+        {error && <p style={{ color: "#DC2626", fontSize: 13, marginBottom: 12 }}>{error}</p>}
+
+        {!loading && rec && (
+          <>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12, fontSize: 12 }}>
+              <span style={{ background: sevColor + "20", color: sevColor, border: `1px solid ${sevColor}55`, padding: "3px 10px", borderRadius: 6, fontWeight: 800 }}>
+                {(rec.severity || "low").toUpperCase()} priority
+              </span>
+              {rec.pattern?.detected && (
+                <span style={{ background: "#DC262620", color: "#DC2626", border: "1px solid #DC262655", padding: "3px 10px", borderRadius: 6, fontWeight: 800 }}>
+                  Recurring · {rec.pattern.count} similar
+                </span>
+              )}
+              <span style={{ color: "#3C4A42", padding: "3px 0" }}>🕒 {rec.timing}</span>
+            </div>
+
+            <div style={{ display: "flex", gap: 6, marginBottom: 12, background: "#E8F0E9", border: "1px solid #BBCABF", borderRadius: 12, padding: 4 }}>
+              {[{ id: "x", label: "Post to X" }, { id: "email", label: "Email authorities" }].map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)} style={{
+                  flex: 1, padding: "9px 8px", border: 0, borderRadius: 9,
+                  background: tab === t.id ? "#006C49" : "transparent",
+                  color: tab === t.id ? "#fff" : "#3C4A42",
+                  fontFamily: "inherit", fontWeight: 800, cursor: "pointer",
+                }}>{t.label}</button>
+              ))}
+            </div>
+
+            {tab === "x" && (
+              <>
+                <label style={{ fontWeight: 800, fontSize: 13 }}>Caption {rec.captionError ? "(fallback — Claude unavailable)" : ""}</label>
+                <textarea className="inp" style={{ marginTop: 6, minHeight: 110 }} value={caption} onChange={e => setCaption(e.target.value)} maxLength={280} />
+                <p style={{ fontSize: 11, color: caption.length > 280 ? "#DC2626" : "#3C4A42", textAlign: "right", marginTop: 2 }}>{caption.length}/280</p>
+                {tweetedAt && <p style={{ fontSize: 12, color: "#16A34A", fontWeight: 800, marginTop: 6 }}>✅ Already posted to X for this report.</p>}
+                <button className="btn-p" style={{ width: "100%", marginTop: 8 }} onClick={postX} disabled={!!executing || !caption.trim() || caption.length > 280 || !!tweetedAt}>
+                  {tweetedAt ? "Posted to X" : executing === "post_to_x" ? "Posting…" : "Post to X"}
+                </button>
+              </>
+            )}
+
+            {tab === "email" && (
+              <>
+                <label style={{ fontWeight: 800, fontSize: 13 }}>To (comma-separated)</label>
+                <textarea className="inp" style={{ marginTop: 6, minHeight: 54 }} value={emailTo} onChange={e => setEmailTo(e.target.value)} />
+                <label style={{ fontWeight: 800, fontSize: 13, marginTop: 8, display: "block" }}>Subject</label>
+                <input className="inp" style={{ marginTop: 6 }} value={emailSubject} onChange={e => setEmailSubject(e.target.value)} />
+                <label style={{ fontWeight: 800, fontSize: 13, marginTop: 8, display: "block" }}>Body</label>
+                <textarea className="inp" style={{ marginTop: 6, minHeight: 150 }} value={emailBody} onChange={e => setEmailBody(e.target.value)} />
+                {emailedAt && <p style={{ fontSize: 12, color: "#16A34A", fontWeight: 800, marginTop: 6 }}>✅ Already emailed authorities for this report.</p>}
+                <button className="btn-p" style={{ width: "100%", marginTop: 8 }} onClick={sendEmail} disabled={!!executing || !emailTo.trim() || !emailBody.trim() || !!emailedAt}>
+                  {emailedAt ? "Emailed" : executing === "email_authority" ? "Sending…" : "Send Email"}
+                </button>
+              </>
+            )}
+
+            {rec.escalations?.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>Escalations</div>
+                {rec.escalations.map((e, i) => (
+                  <p key={i} style={{ fontSize: 12, color: "#3C4A42", marginBottom: 4 }}>⚠️ <strong>{e.reason}</strong> ({e.severity}) — {e.guidance}</p>
+                ))}
+              </div>
+            )}
+
+            {rec.similar?.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>Similar past reports ({rec.similar.length})</div>
+                {rec.similar.slice(0, 5).map(s => (
+                  <p key={s.id} style={{ fontSize: 12, color: "#3C4A42", marginBottom: 2 }}>• {[s.area, s.landmark].filter(Boolean).join(", ") || "Unknown area"} — {Math.round((s.similarity || 0) * 100)}% match</p>
+                ))}
+              </div>
+            )}
+
+            {results.length > 0 && (
+              <div style={{ marginTop: 14, borderTop: "1px solid #DDE4DD", paddingTop: 12 }}>
+                {results.map((r, i) => (
+                  <p key={i} style={{ fontSize: 12, color: r.status === "error" ? "#DC2626" : "#3C4A42", marginBottom: 6 }}>
+                    {r.status === "error" ? "❌" : r.status === "skipped" ? "⚠️" : "✅"} <strong>{r.action}</strong> — <em>{r.status}</em>: {r.detail}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            <div style={{ marginTop: 16 }}>
+              <button className="btn-s" style={{ width: "100%" }} onClick={onClose} disabled={!!executing}>Close</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ReportsManagementView({ onChanged, onPhotoClick }) {
+  const [recReport, setRecReport] = useState(null);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState("");
@@ -700,6 +879,8 @@ function ReportsManagementView({ onChanged, onPhotoClick }) {
                   <strong>{report.constituency || "Unknown constituency"}</strong>
                   <span style={{ color: "#3C4A42", fontSize: 12 }}>· {report.district || "Unknown district"}</span>
                   <span className={`status-pill ${report.status === "cleaned" ? "cleaned" : "verified"}`}>{report.status === "cleaned" ? "Cleaned" : "Active"}</span>
+                  {report.tweeted_at && <span className="status-pill" style={{ background: "#1D9BF020", color: "#1D9BF0" }}>Posted to X</span>}
+                  {report.emailed_at && <span className="status-pill" style={{ background: "#00694920", color: "#006C49" }}>Emailed</span>}
                 </div>
                 <p style={{ color: "#3C4A42", fontSize: 12, marginBottom: 4 }}>📍 {[report.area, report.landmark].filter(Boolean).join(" · ") || "No area details"}</p>
                 <p style={{ color: "#161D19", fontSize: 13, lineHeight: 1.5, marginBottom: 8 }}>{report.description || "No description provided."}</p>
@@ -711,6 +892,11 @@ function ReportsManagementView({ onChanged, onPhotoClick }) {
                 </div>
               </div>
               <div className="admin-actions">
+                {report.status !== "cleaned" && (
+                  <button className="btn-p" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => setRecReport(report)}>
+                    Generate Post
+                  </button>
+                )}
                 <button className="btn-s admin-danger" disabled={workingId === report.id} onClick={() => handleHide(report)}>
                   {workingId === report.id ? "Working..." : "Hide/Delete"}
                 </button>
@@ -719,6 +905,7 @@ function ReportsManagementView({ onChanged, onPhotoClick }) {
           ))}
         </div>
       )}
+      {recReport && <RecommendationModal report={recReport} onClose={() => { setRecReport(null); loadReports(); }} />}
     </div>
   );
 }

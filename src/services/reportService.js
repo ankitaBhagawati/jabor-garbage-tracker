@@ -22,6 +22,8 @@ const REPORT_SELECT = [
   "is_deleted",
   "created_at",
   "updated_at",
+  "tweeted_at",
+  "emailed_at",
 ].join(",");
 
 const ACTIVE_REPORT_STATUSES = ["verified", "pending", "active", "reported", "open"];
