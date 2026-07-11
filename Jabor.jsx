@@ -1503,6 +1503,8 @@ export default function Jabor() {
         .submit-support-copy { color:#52655B; font-size:12px; line-height:1.55; margin:6px 0 10px; max-width:540px; }
         .submit-support-note { color:#6B8577; font-size:11px; line-height:1.45; margin:8px 0 0; text-align:center; }
         .submit-support-razorpay { justify-content:center; min-height:42px; margin:0; }
+        .razorpay-fallback-link { display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:10px 18px; border:1.5px solid #2371EC; border-radius:6px; background:#F8FBFF; color:#1F4BB8; font-weight:800; font-size:14px; text-decoration:none; }
+        .razorpay-fallback-link:hover { background:#EDF4FF; }
         .success-support-card { margin-top:12px; }
         .contact-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
         .anonymous-inline-toggle { display:flex; flex-direction:column; align-items:center; gap:7px; color:#006C49; font-size:11px; font-weight:800; cursor:pointer; white-space:nowrap; }
