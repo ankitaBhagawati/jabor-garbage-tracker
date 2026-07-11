@@ -262,3 +262,34 @@
     min-width: 0;
   }
 }
+
+.jabor-support-panel--on {
+  box-shadow: 0 0 0 3px #6ffbbe, 0 18px 40px rgba(0, 108, 73, 0.3);
+}
+
+.jabor-support-title {
+  font-size: 1.7rem;
+  font-weight: 800;
+  margin: 0 0 12px;
+}
+
+.jabor-support-text {
+  font-size: 0.98rem;
+  line-height: 1.6;
+  max-width: 620px;
+  margin: 0 auto 22px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.jabor-razorpay-wrap {
+  display: flex;
+  justify-content: center;
+  min-height: 48px;
+  margin-bottom: 12px;
+}
+
+.jabor-support-note {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.75);
+  margin: 0;
+}

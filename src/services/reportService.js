@@ -51,6 +51,27 @@ function normalizeReports(reports) {
   return normalized;
 }
 
+// Admin-only: attach reporter contact (name/email) from report_contacts.
+// RLS returns rows only for the admin token; anonymous reports have none.
+async function addContactData(reports) {
+  const reportIds = reports.map(report => report.id).filter(Boolean);
+  if (reportIds.length === 0) return reports;
+  const params = new URLSearchParams();
+  params.set("select", "report_id,name,email");
+  params.set("report_id", `in.(${reportIds.join(",")})`);
+  try {
+    const contacts = await restJson(`/rest/v1/report_contacts?${params.toString()}`);
+    const byReport = new Map();
+    for (const c of Array.isArray(contacts) ? contacts : []) byReport.set(c.report_id, c);
+    return reports.map(report => {
+      const c = byReport.get(report.id);
+      return { ...report, reporter_name: c?.name || null, reporter_email: c?.email || null };
+    });
+  } catch {
+    return reports;
+  }
+}
+
 async function addCleanupProofData(reports) {
   const normalizedReports = normalizeReports(reports);
   if (normalizedReports.length === 0) return [];
@@ -130,7 +151,8 @@ export async function fetchAdminReports(status = "") {
       : `eq.${status}`);
   }
   params.set("order", status === "cleaned" ? "updated_at.desc" : "created_at.desc");
-  return addCleanupProofData(await restJson(`/rest/v1/reports?${params.toString()}`));
+  const reports = await addCleanupProofData(await restJson(`/rest/v1/reports?${params.toString()}`));
+  return addContactData(reports);
 }
 
 export function hideReport(reportId) {

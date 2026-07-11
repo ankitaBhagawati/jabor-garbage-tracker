@@ -74,9 +74,16 @@ async function getUploadSignature(folder) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ folder }),
   });
-  const data = await res.json();
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* non-JSON body */ }
+  if (!data) {
+    throw new Error(
+      "Image upload service is unavailable. Run `vercel dev` (or `npm run dev` with CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET set in .env.local).",
+    );
+  }
   if (!res.ok) {
-    throw new Error(data?.error || "Could not authorize image upload.");
+    throw new Error(data.error || "Could not authorize image upload.");
   }
   return data;
 }
