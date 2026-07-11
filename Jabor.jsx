@@ -1209,7 +1209,7 @@ export default function Jabor() {
   const [form, setForm] = useState({
     district: "", constituency: "", area: "", landmark: "",
     waste_type: "mixed", description: "", photo: null, photoPreview: null,
-    anonymous: false, reporterName: "", reporterEmail: "",
+    anonymous: true, reporterName: "", reporterEmail: "",
   });
   const fileRef = useRef();
   const dashboardReportsRef = useRef(null);
@@ -1439,7 +1439,7 @@ export default function Jabor() {
       setReports(prev => withPreservedReport(prev, localReport));
       await loadPublicReports(feedFilters, localReport);
       setPreview(null);
-      setForm({ district: "", constituency: "", area: "", landmark: "", waste_type: "mixed", description: "", photo: null, photoPreview: null, anonymous: false, reporterName: "", reporterEmail: "" });
+      setForm({ district: "", constituency: "", area: "", landmark: "", waste_type: "mixed", description: "", photo: null, photoPreview: null, anonymous: true, reporterName: "", reporterEmail: "" });
       setSubmitted(true);
     } catch (e) {
       alert(e.message || "Could not submit the report. Please try again.");
@@ -1525,7 +1525,12 @@ export default function Jabor() {
         .incognito .submit-support-title { color:#F4FBF4; }
         .incognito .submit-support-copy, .incognito .submit-support-note { color:#8CA394; }
         .incognito .submit-support-close:hover { background:#3A473E; }
-        .incognito-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; background:#161D19; color:#E8F0E9; border:1px solid #3A473E; border-radius:12px; padding:12px 16px; margin-bottom:14px; }
+        .incognito-bar { display:flex; align-items:center; justify-content:space-between; gap:14px; background:#161D19; color:#E8F0E9; border:1px solid #3A473E; border-radius:12px; padding:14px 16px; margin-bottom:14px; }
+        .incognito-copy { display:flex; align-items:center; gap:10px; min-width:0; }
+        .incognito-copy-icon { font-size:20px; display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; flex:none; }
+        .incognito-title { font-weight:700; font-size:14px; line-height:1.25; }
+        .incognito-subtitle { font-size:11px; line-height:1.35; color:#8CA394; margin-top:2px; }
+        .incognito-toggle { display:flex; flex-direction:column; align-items:center; gap:8px; font-size:13px; cursor:pointer; white-space:nowrap; color:#E8F0E9; flex:none; }
         .switch { position:relative; display:inline-flex; width:44px; height:24px; flex:none; }
         .switch input { opacity:0; width:0; height:0; position:absolute; margin:0; }
         .switch .slider { position:absolute; inset:0; background:#3A473E; border-radius:999px; transition:background .2s; cursor:pointer; }
@@ -1634,12 +1639,24 @@ export default function Jabor() {
           .submit-support-card { padding:13px 14px 12px; }
           .contact-card-head { align-items:flex-start; }
           .anonymous-inline-toggle { font-size:10px; }
+          .incognito { padding:8px; border-radius:14px; }
+          .incognito-bar { align-items:stretch; gap:12px; padding:13px; }
+          .incognito-copy { flex:1; align-items:flex-start; }
+          .incognito-copy-icon { width:28px; height:28px; margin-top:1px; }
+          .incognito-title { font-size:13px; }
+          .incognito-subtitle { font-size:10.5px; max-width:190px; }
+          .incognito-toggle { align-self:center; min-width:86px; font-size:11px; text-align:center; gap:7px; }
           .page-section { padding:44px 16px; }
           .section-title { font-size:28px; }
           .cta-panel { padding:28px 18px; }
           .inp  { font-size:16px; }
         }
-        @media (max-width:380px) { .stats-row { grid-template-columns:1fr 1fr; } }
+        @media (max-width:380px) {
+          .stats-row { grid-template-columns:1fr 1fr; }
+          .incognito-bar { flex-direction:column; }
+          .incognito-toggle { flex-direction:row; justify-content:space-between; width:100%; min-width:0; }
+          .incognito-subtitle { max-width:none; }
+        }
       `}</style>
 
       {bootLoading && view === "dashboard" && (
@@ -1908,13 +1925,13 @@ export default function Jabor() {
           <div className={"slide-in" + (form.anonymous ? " incognito" : "")} style={{ maxWidth: 600, margin: "0 auto" }}>
             <div style={{ marginBottom: 14, color: form.anonymous ? "#E8F0E9" : undefined }}>
               <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.03em", marginBottom: 4 }}>📸 Report Garbage</h1>
-              <p style={{ color: form.anonymous ? "#8CA394" : "#3C4A42", fontSize: 13 }}>60 seconds · Helps track garbage reports across Assam.</p>
+              <p style={{ color: form.anonymous ? "#8CA394" : "#3C4A42", fontSize: 13 }}>30 seconds · Helps track garbage reports across Assam.</p>
             </div>
 
             {/* Anonymous mode toggle - top of the form. */}
             <div className="incognito-bar">
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 20, display: "inline-flex", alignItems: "center" }}>
+              <div className="incognito-copy">
+                <span className="incognito-copy-icon">
                   {form.anonymous
                     ? <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true">
                         <circle cx="12" cy="12" r="12" fill="#E8F0E9" />
@@ -1929,15 +1946,20 @@ export default function Jabor() {
                     : "👤"}
                 </span>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{form.anonymous ? "Anonymous mode on" : "Reporting as yourself"}</div>
-                  <div style={{ fontSize: 11, color: "#8CA394" }}>{form.anonymous ? "We won't collect or store any of your details." : "Add your contact below to get updates."}</div>
+                  <div className="incognito-title">{form.anonymous ? "Anonymous mode on" : "Reporting as yourself"}</div>
+                  <div className="incognito-subtitle">{form.anonymous ? "We won't collect or store any of your details." : "Add your contact below to get updates."}</div>
                 </div>
               </div>
-              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>
+              <label className="incognito-toggle">
                 <span>Report anonymously?</span>
                 <span className="switch">
                   <input type="checkbox" checked={form.anonymous}
-                    onChange={e => setForm(f => ({ ...f, anonymous: e.target.checked }))} />
+                    onChange={e => setForm(f => ({
+                      ...f,
+                      anonymous: e.target.checked,
+                      reporterName: e.target.checked ? "" : f.reporterName,
+                      reporterEmail: e.target.checked ? "" : f.reporterEmail,
+                    }))} />
                   <span className="slider" />
                 </span>
               </label>
