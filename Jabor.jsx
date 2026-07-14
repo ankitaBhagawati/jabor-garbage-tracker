@@ -1370,7 +1370,10 @@ export default function Jabor() {
     setTimeout(() => ref.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
   };
 
-  const goToReport = () => setAppView("report");
+  const goToReport = () => {
+    setAppView("report");
+    setTimeout(() => window.scrollTo({ top: 0, behavior: "auto" }), 0);
+  };
 
   const goToSupport = () => {
     if (view !== "dashboard") setAppView("dashboard");
@@ -2035,7 +2038,7 @@ export default function Jabor() {
                           ].map(p => (
                             <div key={p.label} style={{ padding: 10, background: "#FFFFFF", borderRadius: 10, border: "1px solid #DDE4DD" }}>
                               <div style={{ fontSize: 10, color: "#006C49", fontFamily: "monospace", marginBottom: 3, fontWeight: 800 }}>{p.label}</div>
-                              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}>{p.value}</div>
+                              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3, color: "#161D19" }}>{p.value}</div>
                               <div style={{ fontSize: 11, color: "#3C4A42", marginBottom: 6 }}>{p.sub}</div>
                             </div>
                           ))}
