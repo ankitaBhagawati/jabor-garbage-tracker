@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import "./style.css";
 import SupportJaborSection, { RazorpayPaymentButton } from "./SupportJaborSection";
 import {
@@ -34,6 +34,7 @@ import {
 } from "./src/utils/analytics.js";
 
 const H        = { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` };
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
 const LOGO     = "/jabor-logo-green-removebg-preview.png";
 const GA_MEASUREMENT_ID = "G-X5MPQVHB44";
 // mpLabel: "Gaurav Gogoi (Jorhat)" - MP name with their Lok Sabha seat
@@ -88,23 +89,21 @@ const db = {
       return [];
     }
   },
-  async insertReport(data) {
-    assertSupabaseConfig();
-    const res = await fetch(`${SUPA_URL}/rest/v1/reports`, {
+  // Reports go through the serverless API so rate limiting and bot
+  // verification run before anything reaches Supabase.
+  async submitReport(data, turnstileToken) {
+    const res = await fetch("/api/reports/submit", {
       method: "POST",
-      // Public users can insert reports but read them through public_reports.
-      // Asking PostgREST to return the row would also require a reports SELECT policy.
-      headers: { ...H, "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify(data),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...data, turnstileToken }),
     });
     const text = await res.text();
+    let body = null;
+    try { body = text ? JSON.parse(text) : null; } catch { /* non-JSON body */ }
     if (!res.ok) {
-      if (res.status === 401 && text.includes("row-level security policy")) {
-        throw new Error("Supabase rejected the report insert. Apply the Jabor public report insert policy and verify its WITH CHECK values.");
-      }
-      throw new Error(`Report submission failed: ${res.status} ${text}`);
+      throw new Error(body?.error || "Could not submit the report. Please try again.");
     }
-    return data;
+    return body;
   },
   // Fire-and-forget: stores the reporter's contact (admin-only) and emails a
   // confirmation. Never blocks or fails the report submission.
@@ -121,6 +120,64 @@ const db = {
     return uploadImageToCloudinary(file, "jabor/reports");
   },
 };
+
+// Cloudflare Turnstile widget (managed mode). Renders nothing until
+// VITE_TURNSTILE_SITE_KEY is configured, so the form keeps working while the
+// keys are being set up. controlRef receives { reset } so the parent can
+// discard a consumed token after each submission attempt.
+function TurnstileWidget({ onToken, controlRef }) {
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return undefined;
+    let widgetId = null;
+    let cancelled = false;
+
+    const render = () => {
+      if (cancelled || widgetId !== null || !containerRef.current || !window.turnstile) return;
+      widgetId = window.turnstile.render(containerRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: token => onToken(token),
+        "expired-callback": () => onToken(""),
+        "error-callback": () => onToken(""),
+        "refresh-expired": "auto",
+      });
+      if (controlRef) {
+        controlRef.current = {
+          reset: () => {
+            try { window.turnstile.reset(widgetId); } catch { /* widget already gone */ }
+            onToken("");
+          },
+        };
+      }
+    };
+
+    if (window.turnstile) {
+      render();
+    } else {
+      let script = document.getElementById("cf-turnstile-script");
+      if (!script) {
+        script = document.createElement("script");
+        script.id = "cf-turnstile-script";
+        script.src = "https://challenges.cloudflare.com/turnstile/v1/api.js?render=explicit";
+        script.async = true;
+        document.head.appendChild(script);
+      }
+      script.addEventListener("load", render);
+    }
+
+    return () => {
+      cancelled = true;
+      if (controlRef) controlRef.current = null;
+      if (widgetId !== null && window.turnstile) {
+        try { window.turnstile.remove(widgetId); } catch { /* already removed */ }
+      }
+    };
+  }, [onToken, controlRef]);
+
+  if (!TURNSTILE_SITE_KEY) return null;
+  return <div ref={containerRef} style={{ display: "flex", justifyContent: "center", marginBottom: 14 }} />;
+}
 
 function logReportPhotos(source, reports) {
   if (!import.meta.env.DEV) return;
@@ -1212,6 +1269,9 @@ export default function Jabor() {
     anonymous: true, reporterName: "", reporterEmail: "",
   });
   const fileRef = useRef();
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileRef = useRef(null);
+  const onTurnstileToken = useCallback(token => setTurnstileToken(token), []);
   const dashboardReportsRef = useRef(null);
   const aboutRef = useRef(null);
   const statsRef = useRef(null);
@@ -1403,15 +1463,16 @@ export default function Jabor() {
     if (wantsContact && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       alert("Please enter a valid email, or choose to report anonymously."); return;
     }
+    if (TURNSTILE_SITE_KEY && !turnstileToken) {
+      alert("Please wait for the security check above the submit button to finish, then try again."); return;
+    }
     setSubmitting(true);
     try {
       setSubmitStep("uploading");
       const photo_url = await db.uploadPhoto(form.photo);
       if (import.meta.env.DEV) console.debug("[Jabor] uploaded report photo_url", photo_url);
       setSubmitStep("saving");
-      const reportId = crypto.randomUUID();
       const payload = {
-        id: reportId,
         district: form.district, constituency: form.constituency,
         lok_sabha_seat: preview.mla?.lok_sabha_seat || "",
         mla: preview.mla?.name || "Unknown", mla_party: preview.mla?.party || "Unknown",
@@ -1420,10 +1481,11 @@ export default function Jabor() {
         waste_type: form.waste_type, description: form.description.trim(),
         lat: null, lng: null, photo_url,
       };
-      await db.insertReport(payload);
+      const result = await db.submitReport(payload, turnstileToken);
+      const reportId = result?.id;
       trackReportSubmission();
       // Non-blocking: store contact (admin-only) + send confirmation email.
-      if (wantsContact) {
+      if (wantsContact && reportId) {
         db.notifyReporter({
           report_id: reportId, name: form.reporterName.trim(), email,
           area: form.area.trim(), waste_type: form.waste_type,
@@ -1443,8 +1505,11 @@ export default function Jabor() {
       await loadPublicReports(feedFilters, localReport);
       setPreview(null);
       setForm({ district: "", constituency: "", area: "", landmark: "", waste_type: "mixed", description: "", photo: null, photoPreview: null, anonymous: true, reporterName: "", reporterEmail: "" });
+      setTurnstileToken("");
       setSubmitted(true);
     } catch (e) {
+      // Turnstile tokens are single-use; get a fresh one before a retry.
+      turnstileRef.current?.reset();
       alert(e.message || "Could not submit the report. Please try again.");
     } finally {
       setSubmitting(false);
@@ -2101,6 +2166,8 @@ export default function Jabor() {
                 <p style={{ fontSize: 11, color: "#3C4A42", marginTop: 8 }}>🔒 Shared only with the admins - it won't show on the public dashboard.</p>
               </div>
             )}
+
+            <TurnstileWidget onToken={onTurnstileToken} controlRef={turnstileRef} />
 
             <button className="btn-p" style={{ width: "100%", padding: 16, fontSize: 16 }} onClick={onSubmit} disabled={submitting}>
               {submitting && submitStep === "saving"    ? "💾 Saving report…"    :
