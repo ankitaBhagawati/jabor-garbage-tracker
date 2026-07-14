@@ -15,10 +15,16 @@ const WASTE_TYPES = new Set(["mixed", "plastic", "construction", "organic", "wat
 const MAX_TEXT_LENGTH = 200;
 const MAX_DESCRIPTION_LENGTH = 2000;
 
+// Env values are trimmed because dashboard copy-paste often smuggles in a
+// trailing newline, which breaks URL parsing and HTTP header values.
+function env(name) {
+  return (process.env[name] || "").trim();
+}
+
 let ratelimit = null;
 function getRatelimit() {
-  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+  const url = env("UPSTASH_REDIS_REST_URL") || env("KV_REST_API_URL");
+  const token = env("UPSTASH_REDIS_REST_TOKEN") || env("KV_REST_API_TOKEN");
   if (!url || !token) return null;
   if (!ratelimit) {
     ratelimit = new Ratelimit({
@@ -39,7 +45,7 @@ function getClientIp(req) {
 }
 
 async function verifyTurnstile(token, ip) {
-  const secret = process.env.TURNSTILE_SECRET_KEY;
+  const secret = env("TURNSTILE_SECRET_KEY");
   if (!secret) {
     // Not configured yet - allow through so submissions keep working until the
     // Turnstile keys are added, but make the gap loud in the logs.
@@ -68,7 +74,7 @@ function cleanText(value, maxLength = MAX_TEXT_LENGTH) {
 }
 
 function validatePayload(body) {
-  const cloudName = process.env.VITE_CLOUDINARY_CLOUD_NAME;
+  const cloudName = env("VITE_CLOUDINARY_CLOUD_NAME");
   if (!cloudName) {
     return { error: "Report submissions are not configured on the server.", status: 500 };
   }
@@ -115,13 +121,13 @@ function validatePayload(body) {
 }
 
 async function insertReport(report) {
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseUrl = env("SUPABASE_URL") || env("VITE_SUPABASE_URL");
   // Prefer the service role key so anon inserts can be revoked at the DB
   // (supabase/jabor-close-direct-report-inserts.sql), making this route the
   // only write path for reports. Falls back to the anon key so submissions
   // keep working until SUPABASE_SERVICE_ROLE_KEY is set in Vercel.
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const supabaseKey = serviceKey || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
+  const supabaseKey = serviceKey || env("SUPABASE_ANON_KEY") || env("VITE_SUPABASE_ANON_KEY");
   if (!supabaseUrl || !supabaseKey) {
     return { status: 500, error: "Report storage is not configured on the server." };
   }
@@ -157,7 +163,14 @@ export default async function handler(req, res) {
 
   const ip = getClientIp(req);
 
-  const limiter = getRatelimit();
+  // A misconfigured rate limiter must degrade to "no rate limit", never to
+  // a crashed function that blocks every submission.
+  let limiter = null;
+  try {
+    limiter = getRatelimit();
+  } catch (error) {
+    console.error("[jabor] rate limiter init failed:", error?.message || error);
+  }
   if (limiter) {
     try {
       const { success, remaining } = await limiter.limit(ip);
