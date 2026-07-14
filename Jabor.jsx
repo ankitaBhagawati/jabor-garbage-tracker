@@ -205,7 +205,7 @@ function TurnstileWidget({ onToken, controlRef }) {
       if (!script) {
         script = document.createElement("script");
         script.id = "cf-turnstile-script";
-        script.src = "https://challenges.cloudflare.com/turnstile/v1/api.js?render=explicit";
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
         script.async = true;
         document.head.appendChild(script);
       }
