@@ -121,34 +121,64 @@ const db = {
   },
 };
 
-// Cloudflare Turnstile widget (managed mode). Renders nothing until
-// VITE_TURNSTILE_SITE_KEY is configured, so the form keeps working while the
-// keys are being set up. controlRef receives { reset } so the parent can
-// discard a consumed token after each submission attempt.
+// Cloudflare Turnstile widget. Renders nothing until VITE_TURNSTILE_SITE_KEY
+// is configured, so the form keeps working while the keys are being set up.
+// controlRef receives { reset } so the parent can discard a consumed token
+// after each submission attempt. Load/render failures are shown on screen
+// (with the Cloudflare error code) instead of failing silently, because a
+// silent failure blocks every submission with no clue why.
 function TurnstileWidget({ onToken, controlRef }) {
   const containerRef = useRef(null);
+  const [status, setStatus] = useState("loading");
+  const [errorCode, setErrorCode] = useState("");
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY) return undefined;
     let widgetId = null;
     let cancelled = false;
+    let pollTimer = null;
+    let failTimer = null;
+
+    const fail = code => {
+      if (cancelled) return;
+      setStatus("failed");
+      setErrorCode(String(code || ""));
+      onToken("");
+    };
 
     const render = () => {
       if (cancelled || widgetId !== null || !containerRef.current || !window.turnstile) return;
-      widgetId = window.turnstile.render(containerRef.current, {
-        sitekey: TURNSTILE_SITE_KEY,
-        callback: token => onToken(token),
-        "expired-callback": () => onToken(""),
-        "error-callback": () => onToken(""),
-        "refresh-expired": "auto",
-      });
-      if (controlRef) {
-        controlRef.current = {
-          reset: () => {
-            try { window.turnstile.reset(widgetId); } catch { /* widget already gone */ }
-            onToken("");
+      clearInterval(pollTimer);
+      clearTimeout(failTimer);
+      try {
+        widgetId = window.turnstile.render(containerRef.current, {
+          sitekey: TURNSTILE_SITE_KEY,
+          callback: token => {
+            if (cancelled) return;
+            setStatus("ready");
+            setErrorCode("");
+            onToken(token);
           },
-        };
+          "expired-callback": () => onToken(""),
+          "error-callback": code => { fail(code); return true; },
+          "refresh-expired": "auto",
+        });
+        if (widgetId === undefined || widgetId === null) {
+          fail("widget-not-created");
+          return;
+        }
+        setStatus("ready");
+        if (controlRef) {
+          controlRef.current = {
+            reset: () => {
+              try { window.turnstile.reset(widgetId); } catch { /* widget already gone */ }
+              onToken("");
+            },
+          };
+        }
+      } catch (error) {
+        fail(error?.message || "render-failed");
       }
     };
 
@@ -164,19 +194,48 @@ function TurnstileWidget({ onToken, controlRef }) {
         document.head.appendChild(script);
       }
       script.addEventListener("load", render);
+      script.addEventListener("error", () => fail("script-blocked-or-offline"));
+      // The load event can fire before this mount attaches its listener, and
+      // some in-app browsers delay it; poll for the global as a fallback.
+      pollTimer = setInterval(render, 300);
+      failTimer = setTimeout(() => {
+        if (!cancelled && widgetId === null) fail("load-timeout");
+      }, 12000);
     }
 
     return () => {
       cancelled = true;
+      clearInterval(pollTimer);
+      clearTimeout(failTimer);
       if (controlRef) controlRef.current = null;
       if (widgetId !== null && window.turnstile) {
         try { window.turnstile.remove(widgetId); } catch { /* already removed */ }
       }
     };
-  }, [onToken, controlRef]);
+  }, [onToken, controlRef, retryTick]);
 
   if (!TURNSTILE_SITE_KEY) return null;
-  return <div ref={containerRef} style={{ display: "flex", justifyContent: "center", marginBottom: 14 }} />;
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div ref={containerRef} style={{ display: "flex", justifyContent: "center" }} />
+      {status === "loading" && (
+        <p style={{ textAlign: "center", fontSize: 12, color: "#3C4A42", margin: "6px 0 0" }}>
+          🔒 Loading security check…
+        </p>
+      )}
+      {status === "failed" && (
+        <div style={{ textAlign: "center", margin: "6px 0 0" }}>
+          <p style={{ fontSize: 12, color: "#B42318", margin: 0 }}>
+            ⚠️ Security check could not load{errorCode ? ` (${errorCode})` : ""}. Check your connection or ad blocker, then retry.
+          </p>
+          <button type="button" className="btn-s" style={{ marginTop: 8, padding: "8px 16px", fontSize: 13 }}
+            onClick={() => { setStatus("loading"); setErrorCode(""); setRetryTick(t => t + 1); }}>
+            Retry security check
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function logReportPhotos(source, reports) {
