@@ -132,6 +132,7 @@ function TurnstileWidget({ onToken, controlRef }) {
   const [status, setStatus] = useState("loading");
   const [errorCode, setErrorCode] = useState("");
   const [retryTick, setRetryTick] = useState(0);
+  const autoRetriesRef = useRef(0);
 
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY) return undefined;
@@ -142,6 +143,14 @@ function TurnstileWidget({ onToken, controlRef }) {
 
     const fail = code => {
       if (cancelled) return;
+      // One silent retry with a fresh script request before bothering the
+      // user - transient stalls to challenges.cloudflare.com are common on
+      // flaky mobile connections.
+      if (autoRetriesRef.current < 1 && !window.turnstile) {
+        autoRetriesRef.current += 1;
+        setRetryTick(t => t + 1);
+        return;
+      }
       setStatus("failed");
       setErrorCode(String(code || ""));
       onToken("");
@@ -186,6 +195,13 @@ function TurnstileWidget({ onToken, controlRef }) {
       render();
     } else {
       let script = document.getElementById("cf-turnstile-script");
+      // A leftover script tag that never produced the turnstile global is a
+      // dead request (hung fetch, earlier failure) - listeners on it will
+      // never fire again. Replace it so every attempt is a fresh fetch.
+      if (script && retryTick > 0) {
+        script.remove();
+        script = null;
+      }
       if (!script) {
         script = document.createElement("script");
         script.id = "cf-turnstile-script";
@@ -200,7 +216,7 @@ function TurnstileWidget({ onToken, controlRef }) {
       pollTimer = setInterval(render, 300);
       failTimer = setTimeout(() => {
         if (!cancelled && widgetId === null) fail("load-timeout");
-      }, 12000);
+      }, 8000);
     }
 
     return () => {
@@ -226,10 +242,10 @@ function TurnstileWidget({ onToken, controlRef }) {
       {status === "failed" && (
         <div style={{ textAlign: "center", margin: "6px 0 0" }}>
           <p style={{ fontSize: 12, color: "#B42318", margin: 0 }}>
-            ⚠️ Security check could not load{errorCode ? ` (${errorCode})` : ""}. Check your connection or ad blocker, then retry.
+            ⚠️ Security check could not load{errorCode ? ` (${errorCode})` : ""}. If retrying does not help, switch between Wi-Fi and mobile data, or turn off any VPN, Private DNS, or ad blocker.
           </p>
           <button type="button" className="btn-s" style={{ marginTop: 8, padding: "8px 16px", fontSize: 13 }}
-            onClick={() => { setStatus("loading"); setErrorCode(""); setRetryTick(t => t + 1); }}>
+            onClick={() => { autoRetriesRef.current = 0; setStatus("loading"); setErrorCode(""); setRetryTick(t => t + 1); }}>
             Retry security check
           </button>
         </div>
