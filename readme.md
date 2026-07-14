@@ -76,8 +76,13 @@ IP rate limiting (3 reports per 10 minutes, via Upstash Redis) and Cloudflare
 Turnstile bot verification before inserting into Supabase. The Turnstile and
 Upstash variables are optional in local dev - the route logs a warning and
 skips the corresponding check when they are unset - but they must be set in
-production. Do not expose `TURNSTILE_SECRET_KEY` or the Upstash token in
-client-side code or `VITE_` variables.
+production. Do not expose `TURNSTILE_SECRET_KEY`, the Upstash token, or
+`SUPABASE_SERVICE_ROLE_KEY` in client-side code or `VITE_` variables.
+
+Once `SUPABASE_SERVICE_ROLE_KEY` is set in production, run
+`supabase/jabor-close-direct-report-inserts.sql` in the Supabase SQL Editor to
+revoke direct anonymous inserts on `reports` - otherwise bots can bypass the
+API route by POSTing to the Supabase REST endpoint with the public anon key.
 
 Use placeholders in documentation and examples. Never commit real environment keys.
 

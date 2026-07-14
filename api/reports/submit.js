@@ -116,12 +116,18 @@ function validatePayload(body) {
 
 async function insertReport(report) {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  // Prefer the service role key so anon inserts can be revoked at the DB
+  // (supabase/jabor-close-direct-report-inserts.sql), making this route the
+  // only write path for reports. Falls back to the anon key so submissions
+  // keep working until SUPABASE_SERVICE_ROLE_KEY is set in Vercel.
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseKey = serviceKey || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   if (!supabaseUrl || !supabaseKey) {
     return { status: 500, error: "Report storage is not configured on the server." };
   }
-  // The anon key is intentional: RLS insert policies still apply, so this
-  // route adds checks on top of the DB rules rather than bypassing them.
+  if (!serviceKey) {
+    console.warn("[jabor] SUPABASE_SERVICE_ROLE_KEY is not set - inserting with the anon key; direct anon inserts must stay enabled until it is configured");
+  }
   const res = await fetch(`${supabaseUrl}/rest/v1/reports`, {
     method: "POST",
     headers: {
