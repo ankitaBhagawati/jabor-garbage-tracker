@@ -69,10 +69,11 @@ async function redisIncr(key, windowSec) {
     const res = await fetch(`${url}/pipeline`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify([["INCR", key], ["EXPIRE", key, String(windowSec), "NX"]]),
+      // SET NX EX creates the counter with its TTL once; INCR keeps that TTL. Works on any Redis version.
+      body: JSON.stringify([["SET", key, "0", "EX", String(windowSec), "NX"], ["INCR", key]]),
     });
     if (!res.ok) return null;
-    const [incr] = await res.json();
+    const [, incr] = await res.json();
     return Number(incr?.result) || null;
   } catch {
     return null;
