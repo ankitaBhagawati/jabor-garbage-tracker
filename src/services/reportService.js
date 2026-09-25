@@ -1,4 +1,4 @@
-import { encodeFilter, restJson } from "./supabaseRest.js";
+import { adminRestJson, encodeFilter, restJson } from "./supabaseRest.js";
 
 const REPORT_SELECT = [
   "id",
@@ -60,7 +60,7 @@ async function addContactData(reports) {
   params.set("select", "report_id,name,email");
   params.set("report_id", `in.(${reportIds.join(",")})`);
   try {
-    const contacts = await restJson(`/rest/v1/report_contacts?${params.toString()}`);
+    const contacts = await adminRestJson(`/rest/v1/report_contacts?${params.toString()}`);
     const byReport = new Map();
     for (const c of Array.isArray(contacts) ? contacts : []) byReport.set(c.report_id, c);
     return reports.map(report => {
@@ -72,7 +72,7 @@ async function addContactData(reports) {
   }
 }
 
-async function addCleanupProofData(reports) {
+async function addCleanupProofData(reports, request = restJson) {
   const normalizedReports = normalizeReports(reports);
   if (normalizedReports.length === 0) return [];
   const reportIds = normalizedReports.map(report => report.id).filter(Boolean);
@@ -85,7 +85,7 @@ async function addCleanupProofData(reports) {
   params.set("order", "updated_at.desc");
 
   try {
-    const proofs = await restJson(`/rest/v1/cleanup_proofs?${params.toString()}`);
+    const proofs = await request(`/rest/v1/cleanup_proofs?${params.toString()}`);
     const proofByReport = new Map();
     for (const proof of Array.isArray(proofs) ? proofs : []) {
       if (!proofByReport.has(proof.report_id)) proofByReport.set(proof.report_id, proof);
@@ -151,19 +151,19 @@ export async function fetchAdminReports(status = "") {
       : `eq.${status}`);
   }
   params.set("order", status === "cleaned" ? "updated_at.desc" : "created_at.desc");
-  const reports = await addCleanupProofData(await restJson(`/rest/v1/reports?${params.toString()}`));
+  const reports = await addCleanupProofData(await adminRestJson(`/rest/v1/reports?${params.toString()}`), adminRestJson);
   return addContactData(reports);
 }
 
 export function hideReport(reportId) {
-  return restJson(`/rest/v1/reports?id=eq.${encodeFilter(reportId)}`, {
+  return adminRestJson(`/rest/v1/reports?id=eq.${encodeFilter(reportId)}`, {
     method: "PATCH",
     // Once is_deleted becomes true, public report SELECT policies intentionally
     // hide the row. Do not ask PostgREST to return a row that is no longer readable.
-    headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
-    body: JSON.stringify({
+    prefer: "return=minimal",
+    body: {
       is_deleted: true,
       updated_at: new Date().toISOString(),
-    }),
+    },
   });
 }

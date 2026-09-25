@@ -1,54 +1,21 @@
-import { assertSupabaseConfig, SUPA_KEY, SUPA_URL } from "./supabaseRest.js";
+import { apiJson } from "./supabaseRest.js";
 
-const SESSION_KEY = "jabor_supabase_session";
+// Admin tokens live in HttpOnly cookies set by /api/admin/*; nothing is stored in the page.
+// Drop any token left in localStorage by the old client-side login.
+try { localStorage.removeItem("jabor_supabase_session"); } catch { /* storage blocked */ }
 
-function saveSession(session) {
-  if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  else localStorage.removeItem(SESSION_KEY);
-}
-
-export function getStoredSession() {
+export async function checkAdminSession() {
   try {
-    return JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+    return await apiJson("/api/admin/session", { method: "GET" });
   } catch {
-    saveSession(null);
     return null;
   }
 }
 
-export function getAccessToken() {
-  return getStoredSession()?.access_token || "";
-}
-
-export function isAdminSession(session = getStoredSession()) {
-  const expiresAt = Number(session?.expires_at || 0);
-  return session?.user?.app_metadata?.role === "admin" && expiresAt * 1000 > Date.now();
-}
-
-export async function signInAdmin(email, password) {
-  assertSupabaseConfig();
-  const res = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: { apikey: SUPA_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.msg || data?.error_description || "Could not sign in.");
-  if (!isAdminSession(data)) {
-    saveSession(null);
-    throw new Error("This account does not have Jabor admin access.");
-  }
-  saveSession(data);
-  return data;
+export function signInAdmin(email, password) {
+  return apiJson("/api/admin/login", { body: { email, password } });
 }
 
 export async function signOutAdmin() {
-  assertSupabaseConfig();
-  const token = getAccessToken();
-  saveSession(null);
-  if (!token) return;
-  await fetch(`${SUPA_URL}/auth/v1/logout`, {
-    method: "POST",
-    headers: { apikey: SUPA_KEY, Authorization: `Bearer ${token}` },
-  });
+  await apiJson("/api/admin/logout").catch(() => {});
 }

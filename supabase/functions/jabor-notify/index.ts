@@ -1,5 +1,5 @@
-// jabor-notify - citizen report confirmation. PUBLIC endpoint (no admin).
-// Called by the frontend right after a report is inserted, only when the
+// jabor-notify - citizen report confirmation. Server-to-server only.
+// Called by api/reports.js right after a report is inserted, only when the
 // reporter chose to share an email. Stores their contact (service role, so it
 // stays off the public client) and sends a confirmation via Resend.
 // Reused function secrets: RESEND_API_KEY, EMAIL_FROM, EMAIL_REPLY_TO.
@@ -21,6 +21,13 @@ const isEmail = (s: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s);
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);
+
+  // Only our /api/reports server function may call this (it holds the shared secret);
+  // otherwise anyone could attach contacts to reports and use us to send email.
+  const secret = Deno.env.get("NOTIFY_SHARED_SECRET");
+  if (!secret || req.headers.get("x-jabor-notify-secret") !== secret) {
+    return json({ error: "Forbidden." }, 403);
+  }
 
   let body: NotifyBody;
   try {

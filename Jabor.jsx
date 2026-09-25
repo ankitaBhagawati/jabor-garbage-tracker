@@ -14,12 +14,13 @@ import {
   uploadCleanupProof,
 } from "./src/services/cleanupService.js";
 import {
-  getStoredSession,
-  isAdminSession,
+  checkAdminSession,
   signInAdmin,
   signOutAdmin,
 } from "./src/services/authService.js";
+import Turnstile from "./src/components/Turnstile.jsx";
 import {
+  apiJson,
   assertSupabaseConfig,
   SUPA_KEY,
   SUPA_URL,
@@ -88,33 +89,10 @@ const db = {
       return [];
     }
   },
+  // Server validates, checks the human token, rate-limits, inserts, and emails the reporter.
   async insertReport(data) {
-    assertSupabaseConfig();
-    const res = await fetch(`${SUPA_URL}/rest/v1/reports`, {
-      method: "POST",
-      // Public users can insert reports but read them through public_reports.
-      // Asking PostgREST to return the row would also require a reports SELECT policy.
-      headers: { ...H, "Content-Type": "application/json", Prefer: "return=minimal" },
-      body: JSON.stringify(data),
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      if (res.status === 401 && text.includes("row-level security policy")) {
-        throw new Error("Supabase rejected the report insert. Apply the Jabor public report insert policy and verify its WITH CHECK values.");
-      }
-      throw new Error(`Report submission failed: ${res.status} ${text}`);
-    }
-    return data;
-  },
-  // Fire-and-forget: stores the reporter's contact (admin-only) and emails a
-  // confirmation. Never blocks or fails the report submission.
-  async notifyReporter(payload) {
-    assertSupabaseConfig();
-    await fetch(`${SUPA_URL}/functions/v1/jabor-notify`, {
-      method: "POST",
-      headers: { ...H, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const { report } = await apiJson("/api/reports", { body: data });
+    return report;
   },
   async uploadPhoto(file) {
     // Supabase stores only the Cloudinary secure URL returned by this upload.
@@ -1073,6 +1051,8 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
   const [submittedBy, setSubmittedBy] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileKey, setTurnstileKey] = useState(0);
 
   const submit = async e => {
     e.preventDefault();
@@ -1087,7 +1067,7 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
     setLoading(true);
     setMessage("");
     try {
-      await uploadCleanupProof(reportId, image, cleanedDateEstimate.trim(), submittedBy.trim() || null);
+      await uploadCleanupProof(reportId, image, cleanedDateEstimate.trim(), submittedBy.trim() || null, turnstileToken);
       trackCleanupProofSubmission();
       setImage(null);
       setCleanedDateEstimate("");
@@ -1097,6 +1077,8 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
     } catch (e) {
       setMessage(e.message || "Could not submit cleanup proof.");
     } finally {
+      setTurnstileToken("");
+      setTurnstileKey(k => k + 1);
       setLoading(false);
     }
   };
@@ -1133,6 +1115,7 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
         onChange={e => setSubmittedBy(e.target.value)}
         placeholder="Your name (optional)"
       />
+      <Turnstile key={turnstileKey} onToken={setTurnstileToken} />
       {message && <p style={{ fontSize: 12, color: message.includes("submitted") ? "#059669" : "#DC2626" }}>{message}</p>}
       <button className="btn-p" disabled={loading} type="submit" style={{ width: "100%", padding: 12 }}>
         {loading ? "Submitting..." : "Submit Cleanup Reply"}
@@ -1142,10 +1125,15 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
 }
 
 function AdminDashboard({ onChanged }) {
-  const [isAdmin, setIsAdmin] = useState(() => isAdminSession(getStoredSession()));
+  const [isAdmin, setIsAdmin] = useState(null);
   const [section, setSection] = useState("reports");
   const [photoPreview, setPhotoPreview] = useState("");
 
+  useEffect(() => {
+    checkAdminSession().then(session => setIsAdmin(Boolean(session)));
+  }, []);
+
+  if (isAdmin === null) return <AdminEmpty icon="⏳" title="Checking admin session…" text="" />;
   if (!isAdmin) return <AdminLoginGate onUnlock={() => setIsAdmin(true)} />;
 
   return (
@@ -1206,6 +1194,8 @@ export default function Jabor() {
   const [drawerOpen,     setDrawerOpen]     = useState(false);
   const [bootLoading,    setBootLoading]    = useState(!isAdminRoute);
   const [quoteIndex,     setQuoteIndex]     = useState(0);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileKey,   setTurnstileKey]   = useState(0);
   const [form, setForm] = useState({
     district: "", constituency: "", area: "", landmark: "",
     waste_type: "mixed", description: "", photo: null, photoPreview: null,
@@ -1403,33 +1393,24 @@ export default function Jabor() {
     if (wantsContact && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       alert("Please enter a valid email, or choose to report anonymously."); return;
     }
+    if (!turnstileToken) { alert("Please complete the human check above the Submit button."); return; }
     setSubmitting(true);
     try {
       setSubmitStep("uploading");
       const photo_url = await db.uploadPhoto(form.photo);
       if (import.meta.env.DEV) console.debug("[Jabor] uploaded report photo_url", photo_url);
       setSubmitStep("saving");
-      const reportId = crypto.randomUUID();
-      const payload = {
-        id: reportId,
+      // District, MLA and MP are resolved server-side from the constituency.
+      const payload = await db.insertReport({
         district: form.district, constituency: form.constituency,
-        lok_sabha_seat: preview.mla?.lok_sabha_seat || "",
-        mla: preview.mla?.name || "Unknown", mla_party: preview.mla?.party || "Unknown",
-        mp: preview.mp?.name || "Unknown",   mp_party:  preview.mp?.party  || "Unknown",
         area: form.area.trim(), landmark: form.landmark.trim(),
         waste_type: form.waste_type, description: form.description.trim(),
-        lat: null, lng: null, photo_url,
-      };
-      await db.insertReport(payload);
+        photo_url,
+        name: wantsContact ? form.reporterName.trim() : "",
+        email: wantsContact ? email : "",
+        turnstileToken,
+      });
       trackReportSubmission();
-      // Non-blocking: store contact (admin-only) + send confirmation email.
-      if (wantsContact) {
-        db.notifyReporter({
-          report_id: reportId, name: form.reporterName.trim(), email,
-          area: form.area.trim(), waste_type: form.waste_type,
-          district: form.district, constituency: form.constituency,
-        }).catch(() => {});
-      }
       const now = new Date().toISOString();
       const localReport = {
         ...payload,
@@ -1447,6 +1428,9 @@ export default function Jabor() {
     } catch (e) {
       alert(e.message || "Could not submit the report. Please try again.");
     } finally {
+      // Turnstile tokens are single-use; get a fresh one for the next attempt.
+      setTurnstileToken("");
+      setTurnstileKey(k => k + 1);
       setSubmitting(false);
       setSubmitStep("");
     }
@@ -2102,6 +2086,7 @@ export default function Jabor() {
               </div>
             )}
 
+            <Turnstile key={turnstileKey} onToken={setTurnstileToken} />
             <button className="btn-p" style={{ width: "100%", padding: 16, fontSize: 16 }} onClick={onSubmit} disabled={submitting}>
               {submitting && submitStep === "saving"    ? "💾 Saving report…"    :
                submitting && submitStep === "uploading" ? "📤 Optimizing & uploading photo…" :

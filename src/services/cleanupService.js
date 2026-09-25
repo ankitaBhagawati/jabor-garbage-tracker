@@ -1,9 +1,11 @@
-import { encodeFilter, restJson } from "./supabaseRest.js";
+import { adminRestJson, apiJson, encodeFilter, restJson } from "./supabaseRest.js";
 import { uploadImageToCloudinary, validateUploadImage } from "./cloudinaryService.js";
 
-export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimate, submittedBy = null) {
+export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimate, submittedBy = null, turnstileToken = "") {
   validateUploadImage(imageFile, "Cleanup proof");
+  if (!turnstileToken) throw new Error("Please complete the human check.");
 
+  // Cheap check before spending an image upload; /api/cleanup-proofs re-checks server-side.
   const reportParams = new URLSearchParams();
   reportParams.set("select", "id,status");
   reportParams.set("id", `eq.${reportId}`);
@@ -16,17 +18,14 @@ export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimat
 
   // Supabase stores only this Cloudinary secure URL; no image bytes go to Supabase Storage.
   const imageUrl = await uploadImageToCloudinary(imageFile, "jabor/cleanup-proofs");
-  return restJson("/rest/v1/cleanup_proofs", {
-    method: "POST",
-    // Pending proofs are not publicly readable, so avoid requiring SELECT RLS
-    // permission just to complete a valid public insert.
-    headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
-    body: JSON.stringify({
+  return apiJson("/api/cleanup-proofs", {
+    body: {
       report_id: reportId,
       image_url: imageUrl,
       cleaned_date_estimate: cleanedDateEstimate,
       submitted_by: submittedBy || null,
-    }),
+      turnstileToken,
+    },
   });
 }
 
@@ -35,37 +34,37 @@ export function fetchPendingCleanupProofs() {
   params.set("select", "*,reports(id,photo_url,area,landmark,district,constituency,description,waste_type,mla,mp,created_at,status)");
   params.set("status", "eq.pending");
   params.set("order", "created_at.desc");
-  return restJson(`/rest/v1/cleanup_proofs?${params.toString()}`);
+  return adminRestJson(`/rest/v1/cleanup_proofs?${params.toString()}`);
 }
 
 export async function approveCleanupProof(cleanupProofId, reportId) {
-  await restJson(`/rest/v1/cleanup_proofs?id=eq.${encodeFilter(cleanupProofId)}`, {
+  await adminRestJson(`/rest/v1/cleanup_proofs?id=eq.${encodeFilter(cleanupProofId)}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-    body: JSON.stringify({
+    prefer: "return=representation",
+    body: {
       status: "approved",
       updated_at: new Date().toISOString(),
-    }),
+    },
   });
 
-  return restJson(`/rest/v1/reports?id=eq.${encodeFilter(reportId)}`, {
+  return adminRestJson(`/rest/v1/reports?id=eq.${encodeFilter(reportId)}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-    body: JSON.stringify({
+    prefer: "return=representation",
+    body: {
       status: "cleaned",
       updated_at: new Date().toISOString(),
-    }),
+    },
   });
 }
 
 export function rejectCleanupProof(cleanupProofId, adminNotes = "") {
-  return restJson(`/rest/v1/cleanup_proofs?id=eq.${encodeFilter(cleanupProofId)}`, {
+  return adminRestJson(`/rest/v1/cleanup_proofs?id=eq.${encodeFilter(cleanupProofId)}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-    body: JSON.stringify({
+    prefer: "return=representation",
+    body: {
       status: "rejected",
       admin_notes: adminNotes,
       updated_at: new Date().toISOString(),
-    }),
+    },
   });
 }
