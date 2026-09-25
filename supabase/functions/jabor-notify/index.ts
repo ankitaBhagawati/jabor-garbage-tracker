@@ -1,5 +1,5 @@
 // jabor-notify - citizen report confirmation. Server-to-server only.
-// Called by api/reports.js right after a report is inserted, only when the
+// Called by api/reports/submit.js right after a report is inserted, only when the
 // reporter chose to share an email. Stores their contact (service role, so it
 // stays off the public client) and sends a confirmation via Resend.
 // Reused function secrets: RESEND_API_KEY, EMAIL_FROM, EMAIL_REPLY_TO.

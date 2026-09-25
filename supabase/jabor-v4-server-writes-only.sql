@@ -1,4 +1,4 @@
--- Public writes now go through api/reports.js and api/cleanup-proofs.js (Turnstile +
+-- Public writes now go through api/reports/submit.js and api/cleanup-proofs.js (Turnstile +
 -- rate limit + validation, then a service-role insert). Remove direct anon writes.
 --
 -- RUN ONLY AFTER the new frontend and api/ functions are deployed and env vars are set,
