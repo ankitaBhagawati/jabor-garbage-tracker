@@ -81,7 +81,7 @@ async function redisIncr(key, windowSec) {
 }
 
 export async function rateLimit(req, name, max, windowSec) {
-  const key = `jabor:rl:${name}:${getClientIp(req)}`;
+  const key = `jabor:rl2:${name}:${getClientIp(req)}`;
   const count = (await redisIncr(key, windowSec)) ?? memoryIncr(key, windowSec);
   if (count > max) throw new HttpError(429, "Too many requests. Please try again later.");
 }
