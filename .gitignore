@@ -11,6 +11,10 @@ dist-ssr/
 .env.*
 !.env.example
 
+# Supabase CLI link state (holds the linked project ref) and local-only dumps
+supabase/.temp/
+.local/
+
 # Vite
 vite.config.js.timestamp-*
 
