@@ -1,0 +1,3 @@
+-- No SQL rollback for the baseline: it is never executed on staging or production.
+-- To undo marking it applied:
+--   supabase migration repair --status reverted <version>

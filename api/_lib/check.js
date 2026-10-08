@@ -42,4 +42,23 @@ assert.deepEqual(readCookies({ headers: { cookie: "a=1; jabor_at=x%3Dy" } }), { 
 assert.match(cookie(req("GET"), "jabor_at", "t", 60), /HttpOnly; SameSite=Strict; Max-Age=60; Secure$/);
 assert.doesNotMatch(cookie(req("GET", { host: "localhost:5173" }), "jabor_at", "t", 60), /Secure/);
 
+// Health: 200 when Supabase answers, 503 with no details on an error status or network failure.
+const { default: health } = await import("../health.js");
+const realFetch = globalThis.fetch;
+const realError = console.error;
+console.error = () => {};
+for (const [stub, status] of [
+  [async () => new Response("[]", { status: 200 }), 200],
+  [async () => new Response("boom", { status: 500 }), 503],
+  [async () => { throw new Error("unreachable"); }, 503],
+]) {
+  globalThis.fetch = stub;
+  res = mockRes();
+  await health(req("GET"), res);
+  assert.equal(res.statusCode, status);
+  assert.deepEqual(Object.keys(res.body), ["status"]);
+}
+globalThis.fetch = realFetch;
+console.error = realError;
+
 console.log("api guards ok");
