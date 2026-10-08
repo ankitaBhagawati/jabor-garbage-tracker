@@ -58,12 +58,17 @@ supabase migration repair --status reverted <timestamp>
 
 ## Baseline
 
-`supabase/migrations/<timestamp>_baseline.sql` is a schema-only dump of staging (schemas `public` and `private`, plus extensions and cron jobs).
-Both databases already have this schema, so the baseline is never executed. It is marked as applied:
+`supabase/migrations/20261008171232_baseline.sql` is a schema-only dump of the staging `public` schema, plus the extensions and cron job it depends on.
+Both databases already have this schema, so the baseline is never executed. It is only marked as applied:
 
 ```bash
-# staging (developer)
-supabase migration repair --status applied <timestamp>
-# production (owner, from a machine linked to production, only after the staging/production schema diff is reviewed)
-supabase migration repair --status applied <timestamp>
+# staging (done 2026-10-08)
+supabase migration repair --status applied 20261008171232 --db-url "$STAGING_DB_URL"
+# production (owner only)
+supabase migration repair --status applied 20261008171232 --db-url "<production session pooler URL>"
 ```
+
+Staging's history also holds four versions from before the baseline (20260626175844, 20260706202437,
+20260706224522, 20260711192132) with no local files. Their schema is inside the baseline.
+`supabase db push` refuses to run while they are listed as remote-only; mark them reverted
+(`supabase migration repair --status reverted <version>`) once that is agreed.
