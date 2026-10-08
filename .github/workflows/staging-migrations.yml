@@ -1,0 +1,46 @@
+# Applies supabase/migrations to the STAGING project after a merge into staging.
+# Production migrations are never run by CI; the owner applies them by hand (docs/RELEASE.md).
+name: Staging migrations
+
+on:
+  push:
+    branches: [staging]
+    paths: ["supabase/migrations/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-migrations
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    env:
+      # Session pooler host for the staging project (not secret). GitHub runners have no IPv6,
+      # so the direct db.<ref>.supabase.co host is not reachable.
+      POOLER_HOST: aws-1-ap-northeast-1.pooler.supabase.com
+      PROJECT_REF: ${{ secrets.STAGING_PROJECT_REF }}
+      DB_PASSWORD: ${{ secrets.STAGING_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Push migrations to staging
+        run: |
+          if [ "$PROJECT_REF" != "uefijiwklnelmwcipwku" ]; then
+            echo "STAGING_PROJECT_REF is not the staging project. Refusing to run."
+            exit 1
+          fi
+          password=$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["DB_PASSWORD"], safe=""))')
+          db_url="postgresql://postgres.${PROJECT_REF}:${password}@${POOLER_HOST}:5432/postgres"
+          echo "::add-mask::$password"
+          echo "::add-mask::$db_url"
+          supabase migration list --db-url "$db_url"
+          supabase db push --dry-run --db-url "$db_url"
+          supabase db push --db-url "$db_url"

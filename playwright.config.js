@@ -17,7 +17,8 @@ export default defineConfig({
     serviceWorkers: "block",
     // Traces record request headers, which would include the Vercel bypass secret.
     trace: "off",
-    screenshot: "only-on-failure",
+    // Staging holds a copy of real reports; failure screenshots would capture them.
+    screenshot: "off",
   },
   projects: [{ name: "chromium", use: { ...devices["Pixel 7"] } }],
 });

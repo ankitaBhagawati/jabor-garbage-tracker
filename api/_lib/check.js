@@ -64,7 +64,7 @@ console.error = realError;
 // Sentry scrubbing: no emails, tokens, keys, user, cookies or headers leave the machine.
 const { scrubEvent } = await import("../../src/utils/sentryScrub.js");
 const scrubbed = JSON.stringify(scrubEvent({
-  message: "login failed for a.b+c@gmail.com with eyJhbGciOi.eyJzdWIiOiIx.c2lnbmF0dXJl and sb_secret_abc123",
+  message: "login failed for a.b+c@gmail.com with eyJhbGciOi.eyJzdWIiOiIx.c2lnbmF0dXJl and sb_secret_abc123", // gitleaks:allow (fake values)
   user: { email: "a@b.in", ip_address: "1.2.3.4" },
   request: { url: "https://jabor.in/api/admin/login", cookies: { jabor_at: "x" }, headers: { authorization: "Bearer y" }, data: { password: "p" } },
   breadcrumbs: [{ message: "fetch ?apikey=eyJa.eyJb.c" }],
