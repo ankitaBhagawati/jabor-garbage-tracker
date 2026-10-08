@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "node api/_lib/check.js",
-    "test:smoke": "playwright test"
+    "test:smoke": "playwright test",
+    "check:bundle": "node scripts/check-bundle.mjs"
   },
   "dependencies": {
     "@sentry/node": "^11.6.0",

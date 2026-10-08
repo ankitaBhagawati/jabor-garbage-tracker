@@ -9,7 +9,7 @@ export default [
   { ignores: ["dist/", "node_modules/", "playwright-report/", "test-results/", "supabase/functions/"] },
   js.configs.recommended,
   {
-    files: ["**/*.{js,jsx}"],
+    files: ["**/*.{js,jsx,mjs}"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
@@ -26,8 +26,13 @@ export default [
     },
   },
   {
-    files: ["api/**/*.js", "*.config.js", "tests/**/*.js"],
+    files: ["api/**/*.js", "*.config.js", "tests/**/*.js", "scripts/**/*.mjs"],
     languageOptions: { globals: { ...globals.node } },
+  },
+  {
+    // Playwright fixtures call use(), which the React hooks rule mistakes for a hook.
+    files: ["tests/**/*.js"],
+    rules: { "react-hooks/rules-of-hooks": "off" },
   },
   {
     // Legacy single-file app: dead code here is reported as a warning, not removed in this change.
