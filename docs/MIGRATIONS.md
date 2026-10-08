@@ -42,9 +42,12 @@ This creates `supabase/migrations/<timestamp>_short_name.sql`. Write the matchin
 
 ## Apply to staging
 
+Until the CLI access token with database_write is in place, every DB command passes the
+connection string explicitly instead of relying on the linked-project login:
+
 ```bash
-supabase db push --dry-run
-supabase db push
+supabase db push --dry-run --db-url "$STAGING_DB_URL"
+supabase db push --db-url "$STAGING_DB_URL"
 ```
 
 Then run the Supabase security and performance advisors on staging and fix new warnings.
@@ -53,7 +56,7 @@ Then run the Supabase security and performance advisors on staging and fix new w
 
 ```bash
 psql "$STAGING_DB_URL" -v ON_ERROR_STOP=1 -f supabase/rollbacks/<timestamp>_short_name.down.sql
-supabase migration repair --status reverted <timestamp>
+supabase migration repair --status reverted <timestamp> --db-url "$STAGING_DB_URL"
 ```
 
 ## Baseline
@@ -68,7 +71,10 @@ supabase migration repair --status applied 20261008171232 --db-url "$STAGING_DB_
 supabase migration repair --status applied 20261008171232 --db-url "<production session pooler URL>"
 ```
 
-Staging's history also holds four versions from before the baseline (20260626175844, 20260706202437,
+Staging's history held four versions from before the baseline (20260626175844, 20260706202437,
 20260706224522, 20260711192132) with no local files. Their schema is inside the baseline.
-`supabase db push` refuses to run while they are listed as remote-only; mark them reverted
-(`supabase migration repair --status reverted <version>`) once that is agreed.
+They were marked reverted on staging on 2026-10-08 (history rows only, no SQL run), and
+`supabase db push --dry-run` then reported the remote as up to date.
+
+Production has no `supabase_migrations.schema_migrations` table yet. The production
+`repair --status applied` command above creates it.
