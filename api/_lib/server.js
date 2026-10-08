@@ -1,4 +1,5 @@
 // Shared helpers for the Vercel functions in api/. Files under api/_lib are not routes.
+import { captureError } from "./sentry.js";
 
 export const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
 export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
@@ -24,7 +25,10 @@ export function route(method, handler) {
       return await handler(req, res);
     } catch (e) {
       const status = e instanceof HttpError ? e.status : 500;
-      if (status === 500) console.error(e);
+      if (status === 500) {
+        console.error(e);
+        await captureError(e);
+      }
       return res.status(status).json({ error: status === 500 ? "Server error." : e.message });
     }
   };

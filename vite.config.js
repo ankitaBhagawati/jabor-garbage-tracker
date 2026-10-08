@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 
 // Serves the Vercel serverless routes in api/ during `vite dev`, so uploads,
 // report submission and admin login work locally without `vercel dev`.
@@ -46,7 +47,27 @@ function assertNoPublicSecrets(mode) {
   if (leaked.length) throw new Error(`Secrets must not use the VITE_ prefix: ${leaked.join(", ")}`);
 }
 
+// Source maps are built and uploaded to Sentry only when SENTRY_AUTH_TOKEN is set (Vercel builds),
+// then deleted from dist so they are never served to visitors.
+function sentrySourceMaps(env) {
+  if (!env.SENTRY_AUTH_TOKEN) return null;
+  return sentryVitePlugin({
+    authToken: env.SENTRY_AUTH_TOKEN,
+    org: env.SENTRY_ORG,
+    project: env.SENTRY_PROJECT,
+    sourcemaps: { filesToDeleteAfterUpload: ["dist/**/*.map"] },
+    telemetry: false,
+  });
+}
+
 export default defineConfig(({ mode }) => {
   assertNoPublicSecrets(mode);
-  return { plugins: [react(), devApiRoutes(mode)] };
+  const env = { ...loadEnv(mode, process.cwd(), ""), ...process.env };
+  const sentry = sentrySourceMaps(env);
+  return {
+    // APP_ENV (production | staging) is not secret; exposing it lets the client tag Sentry and skip GA on staging.
+    envPrefix: ["VITE_", "APP_ENV"],
+    build: { sourcemap: sentry ? "hidden" : false },
+    plugins: [react(), devApiRoutes(mode), sentry].filter(Boolean),
+  };
 });

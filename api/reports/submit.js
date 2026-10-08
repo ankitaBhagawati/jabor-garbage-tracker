@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import { captureError } from "../_lib/sentry.js";
 
 // Server-side chokepoint for public report submissions. The frontend no longer
 // inserts into Supabase directly; every report passes through rate limiting,
@@ -197,7 +198,17 @@ async function insertReport(report) {
   return { status: 200 };
 }
 
-export default async function handler(req, res) {
+// Unexpected crashes still return 500 through Vercel, but are reported to Sentry first.
+export default async function reportedHandler(req, res) {
+  try {
+    return await handler(req, res);
+  } catch (error) {
+    await captureError(error);
+    throw error;
+  }
+}
+
+async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed." });
