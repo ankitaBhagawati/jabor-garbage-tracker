@@ -36,3 +36,7 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 .vercel
+
+# Playwright
+playwright-report/
+test-results/
