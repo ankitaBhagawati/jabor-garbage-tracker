@@ -30,11 +30,12 @@ New reports are still stored as `verified` (the column default). Existing values
 | From | To | Required |
 |---|---|---|
 | active | in_progress | nothing (assigned to and due date are optional) |
+| in_progress | active | nothing (a note is optional) |
 | active, in_progress | cleaned | cleaned by name, type and date |
 | active, in_progress | invalid | reason: `spam`, `duplicate`, `outside_jurisdiction` or `other` |
 | cleaned, invalid | active | a new note |
 
-Anything else is rejected, including in_progress back to active. Staff may change only: status, ward,
+Anything else is rejected. Staff may change only: status, ward,
 assigned to, due date, cleaned details, invalid reason and note. `cleaned_marked_at` and `cleaned_marked_by`
 are always set by the server.
 
@@ -50,7 +51,17 @@ nightly sweep are not restricted, but everything they change is still audited.
 ## Auto-cleaned reports
 
 The nightly job `jabor-auto-clean-old-reports` marks reports older than 15 days as cleaned, with
-`cleaned_by_type = 'auto'`. It skips reports that belong to a municipality and reports in progress.
+`cleaned_by_type = 'auto'`. It never touches reports in progress.
+
+Reports with no municipality are always swept. For a municipality's reports the sweep is a setting,
+`municipalities.settings.auto_clean_enabled`, off by default and off for Jorhat. Changing it is a data
+change, run by the owner, not a migration:
+
+```sql
+update public.municipalities
+set settings = jsonb_set(settings, '{auto_clean_enabled}', 'true')
+where slug = 'jorhat';
+```
 
 **Dashboards and exports must report `auto` separately from `jmb` and `citizen`.** Auto-cleaned reports
 are left out of days-to-clean and out of the cleaned-without-proof count: nobody confirmed they were cleaned.
