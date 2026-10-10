@@ -65,7 +65,9 @@ async function verifyTurnstile(token, ip) {
   });
   const data = await res.json().catch(() => null);
   if (!data?.success) {
-    return { ok: false, reason: (data?.["error-codes"] || []).join(",") || "verification-failed" };
+    // hostname is the site the token was issued for; a mismatch points at the wrong widget.
+    const codes = (data?.["error-codes"] || []).join(",") || "verification-failed";
+    return { ok: false, reason: data?.hostname ? `${codes} hostname=${data.hostname}` : codes };
   }
   return { ok: true };
 }
@@ -243,7 +245,12 @@ async function handler(req, res) {
 
   const turnstile = await verifyTurnstile(req.body?.turnstileToken, ip);
   if (!turnstile.ok) {
+    // The reason (Cloudflare's error codes) stays in the server log and is never sent to the client.
     console.log(`[jabor] turnstile rejected report submission (ip=${ip}, reason=${turnstile.reason})`);
+    if (turnstile.reason === "missing-token") {
+      console.warn("[jabor] the browser sent no Turnstile token: the client bundle was most likely built without VITE_TURNSTILE_SITE_KEY");
+      return res.status(400).json({ error: "The security check did not run. Please refresh the page and try again." });
+    }
     return res.status(400).json({ error: "Bot verification failed. Please refresh the page and try again." });
   }
 
