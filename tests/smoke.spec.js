@@ -40,6 +40,7 @@ test("report form renders", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Report Garbage Now" }).click();
   await expect(page.getByRole("heading", { name: /Report Garbage/ })).toBeVisible();
+  await expect(page.getByText(/security check is not configured/i)).toHaveCount(0);
 });
 
 test("/admin shows the login gate", async ({ page }) => {

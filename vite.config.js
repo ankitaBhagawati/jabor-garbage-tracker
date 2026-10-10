@@ -64,6 +64,9 @@ export default defineConfig(({ mode }) => {
   assertNoPublicSecrets(mode);
   const env = { ...loadEnv(mode, process.cwd(), ""), ...process.env };
   const sentry = sentrySourceMaps(env);
+  if (env.VERCEL && !env.VITE_TURNSTILE_SITE_KEY) {
+    console.warn("[jabor] VITE_TURNSTILE_SITE_KEY is not set for this build: report and cleanup-proof submission will be blocked.");
+  }
   return {
     // APP_ENV (production | staging) is not secret; exposing it lets the client tag Sentry and skip GA on staging.
     envPrefix: ["VITE_", "APP_ENV"],

@@ -74,4 +74,16 @@ for (const leak of ["@gmail.com", "eyJ", "sb_secret_", "a@b.in", "1.2.3.4", "jab
 }
 assert.ok(scrubbed.includes("https://jabor.in/api/admin/login"), "scrubbing keeps the non-sensitive URL");
 
+// Report submit: a request with no Turnstile token gets a plain message and no Cloudflare codes.
+process.env.TURNSTILE_SECRET_KEY = "test-secret";
+const { default: submit } = await import("../reports/submit.js");
+const quiet = { log: console.log, warn: console.warn };
+console.log = console.warn = () => {};
+res = mockRes();
+await submit({ method: "POST", headers: { host: "jabor.in" }, socket: {}, body: { area: "x" } }, res);
+Object.assign(console, quiet);
+assert.equal(res.statusCode, 400);
+assert.equal(res.body.error, "The security check did not run. Please refresh the page and try again.");
+assert.ok(!JSON.stringify(res.body).includes("missing-token"), "error codes must not reach the client");
+
 console.log("api guards ok");

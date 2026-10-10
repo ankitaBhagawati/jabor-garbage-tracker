@@ -34,6 +34,9 @@ import {
 
 const H        = { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` };
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
+// A deployed build without a site key cannot pass the server's bot check, so say so up front.
+const TURNSTILE_MISSING = !TURNSTILE_SITE_KEY && import.meta.env.PROD;
+const TURNSTILE_MISSING_MESSAGE = "The security check is not configured on this site, so this cannot be submitted right now.";
 const LOGO     = "/jabor-logo-green-removebg-preview.png";
 const GA_MEASUREMENT_ID = "G-X5MPQVHB44";
 // mpLabel: "Gaurav Gogoi (Jorhat)" - MP name with their Lok Sabha seat
@@ -224,6 +227,9 @@ function TurnstileWidget({ onToken, controlRef }) {
     };
   }, [onToken, controlRef, retryTick]);
 
+  if (TURNSTILE_MISSING) {
+    return <p role="alert" style={{ textAlign: "center", fontSize: 12, color: "#B42318", margin: "0 0 14px" }}>⚠️ {TURNSTILE_MISSING_MESSAGE}</p>;
+  }
   if (!TURNSTILE_SITE_KEY) return null;
   return (
     <div style={{ marginBottom: 14 }}>
@@ -1544,6 +1550,7 @@ export default function Jabor() {
     if (wantsContact && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       alert("Please enter a valid email, or choose to report anonymously."); return;
     }
+    if (TURNSTILE_MISSING) { alert(TURNSTILE_MISSING_MESSAGE); return; }
     if (TURNSTILE_SITE_KEY && !turnstileToken) {
       alert("Please wait for the security check above the submit button to finish, then try again."); return;
     }
