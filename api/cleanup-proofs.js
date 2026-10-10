@@ -22,7 +22,7 @@ export default route("POST", async (req, res) => {
   const cleanedDateEstimate = cleanText(body.cleaned_date_estimate, 120, { required: true, label: "Cleaning date" });
   const submittedBy = cleanText(body.submitted_by, 120, { label: "Name" });
 
-  const [report] = await serviceRest(`/rest/v1/reports?id=eq.${reportId}&status=eq.verified&is_deleted=not.is.true&select=id&limit=1`);
+  const [report] = await serviceRest(`/rest/v1/reports?id=eq.${reportId}&status=in.(verified,active,in_progress)&is_deleted=not.is.true&select=id&limit=1`);
   if (!report) throw new HttpError(400, "This report is not available for cleanup proof.");
 
   await serviceRest("/rest/v1/cleanup_proofs", {

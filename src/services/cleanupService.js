@@ -1,5 +1,6 @@
 import { adminRestJson, apiJson, encodeFilter, restJson } from "./supabaseRest.js";
 import { uploadImageToCloudinary, validateUploadImage } from "./cloudinaryService.js";
+import { ACTIVE_REPORT_STATUSES } from "./reportService.js";
 
 export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimate, submittedBy = null, turnstileToken = "") {
   validateUploadImage(imageFile, "Cleanup proof");
@@ -10,9 +11,9 @@ export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimat
   reportParams.set("select", "id,status");
   reportParams.set("id", `eq.${reportId}`);
   reportParams.set("limit", "1");
-  const reports = await restJson(`/rest/v1/reports?${reportParams.toString()}`);
+  const reports = await restJson(`/rest/v1/public_reports?${reportParams.toString()}`);
   const report = Array.isArray(reports) ? reports[0] : null;
-  if (!report || report.status !== "verified") {
+  if (!report || !ACTIVE_REPORT_STATUSES.includes(report.status)) {
     throw new Error("This report is not available for cleanup proof.");
   }
 

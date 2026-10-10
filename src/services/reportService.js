@@ -26,7 +26,31 @@ const REPORT_SELECT = [
   "emailed_at",
 ].join(",");
 
-const ACTIVE_REPORT_STATUSES = ["verified", "pending", "active", "reported", "open"];
+// Columns of the public_reports view, the only thing the public pages read. The view already
+// leaves out hidden and invalid reports and every admin-only column.
+const PUBLIC_REPORT_SELECT = [
+  "id",
+  "constituency",
+  "district",
+  "lok_sabha_seat",
+  "mla",
+  "mla_party",
+  "mp",
+  "mp_party",
+  "area",
+  "landmark",
+  "waste_type",
+  "description",
+  "photo_url",
+  "cleanup_photo_url",
+  "status",
+  "created_at",
+  "updated_at",
+].join(",");
+
+// The view reports 'active' or 'cleaned'. The older names are kept so the same query also works
+// against the previous view and the admin's base-table reads.
+export const ACTIVE_REPORT_STATUSES = ["verified", "pending", "active", "reported", "open"];
 const PUBLIC_REPORT_STATUSES = [...ACTIVE_REPORT_STATUSES, "cleaned"];
 
 function statusFilter(statuses) {
@@ -115,22 +139,20 @@ function applyReportFilters(params, filters = {}) {
 
 async function fetchReportsByStatus(statuses, filters = {}) {
   const params = new URLSearchParams();
-  params.set("select", REPORT_SELECT);
+  params.set("select", PUBLIC_REPORT_SELECT);
   params.set("status", statusFilter(statuses));
-  params.set("is_deleted", "eq.false");
   params.set("order", statuses.includes("cleaned") ? "updated_at.desc" : "created_at.desc");
   applyReportFilters(params, filters);
-  return addCleanupProofData(await restJson(`/rest/v1/reports?${params.toString()}`));
+  return addCleanupProofData(await restJson(`/rest/v1/public_reports?${params.toString()}`));
 }
 
 export async function fetchPublicReports(filters = {}) {
   const params = new URLSearchParams();
-  params.set("select", REPORT_SELECT);
+  params.set("select", PUBLIC_REPORT_SELECT);
   params.set("status", statusFilter(PUBLIC_REPORT_STATUSES));
-  params.set("is_deleted", "eq.false");
   params.set("order", "created_at.desc");
   applyReportFilters(params, filters);
-  return addCleanupProofData(await restJson(`/rest/v1/reports?${params.toString()}`));
+  return addCleanupProofData(await restJson(`/rest/v1/public_reports?${params.toString()}`));
 }
 
 export function fetchActiveReports(filters = {}) {
