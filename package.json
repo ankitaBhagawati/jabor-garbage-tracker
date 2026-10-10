@@ -13,7 +13,8 @@
     "lint": "eslint .",
     "test": "node api/_lib/check.js",
     "test:smoke": "playwright test",
-    "check:bundle": "node scripts/check-bundle.mjs"
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@sentry/node": "^11.6.0",
@@ -28,11 +29,14 @@
     "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.64.0",
     "@sentry/vite-plugin": "^5.4.1",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^6.0.2",
     "eslint": "^9.39.5",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",
+    "typescript": "^7.0.2",
     "vite": "^8.0.16"
   }
 }

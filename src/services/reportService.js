@@ -189,3 +189,60 @@ export function hideReport(reportId) {
     },
   });
 }
+
+const HIDDEN_STATUSES = ["invalid", "rejected"];
+
+// Admin-only: reports that are off the public site, either marked invalid or hidden with the
+// older is_deleted flag. Who hid each one, when and why comes from the audit log; reports hidden
+// before the audit log existed have no entry.
+export async function fetchHiddenReports() {
+  const params = new URLSearchParams();
+  params.set("select", "id,photo_url,area,landmark,district,status,is_deleted,invalid_reason,admin_note,created_at,updated_at");
+  params.set("or", `(is_deleted.eq.true,status.in.(${HIDDEN_STATUSES.join(",")}))`);
+  params.set("order", "updated_at.desc");
+  const reports = await adminRestJson(`/rest/v1/reports?${params.toString()}`);
+  if (!Array.isArray(reports) || reports.length === 0) return [];
+
+  const auditParams = new URLSearchParams();
+  auditParams.set("select", "entity_id,action,actor_email,to_value,note,created_at");
+  auditParams.set("entity_type", "eq.report");
+  auditParams.set("entity_id", `in.(${reports.map(report => report.id).join(",")})`);
+  auditParams.set("action", "in.(hidden,status_change)");
+  auditParams.set("order", "created_at.desc");
+  let audit = [];
+  try {
+    audit = (await adminRestJson(`/rest/v1/audit_log?${auditParams.toString()}`)) || [];
+  } catch {
+    // The list is still useful without the history.
+  }
+
+  return reports.map(report => {
+    // Newest entry that took this report off the public site.
+    const entry = audit.find(row => row.entity_id === report.id
+      && (row.action === "hidden" || HIDDEN_STATUSES.includes(row.to_value?.status)));
+    return {
+      ...report,
+      hidden_at: entry?.created_at || null,
+      hidden_by: entry?.actor_email || null,
+      hidden_reason: entry?.to_value?.invalid_reason || report.invalid_reason || null,
+      hidden_note: entry?.note || null,
+    };
+  });
+}
+
+// Puts a hidden report back. A report hidden with is_deleted keeps its status (a hidden cleaned
+// report comes back as cleaned). A report marked invalid goes back to active, which the database
+// only allows with a note, so one is written when the admin leaves the field empty.
+export async function restoreReport(report, note = "") {
+  const text = note.trim();
+  const body = report.is_deleted
+    ? { is_deleted: false, ...(HIDDEN_STATUSES.includes(report.status) ? {} : { invalid_reason: null }), ...(text ? { admin_note: text } : {}) }
+    : { status: "active", admin_note: text || `Restored from the Hidden tab on ${new Date().toISOString()}` };
+  const rows = await adminRestJson(`/rest/v1/reports?id=eq.${encodeFilter(report.id)}`, {
+    method: "PATCH",
+    prefer: "return=representation",
+    body,
+  });
+  if (!Array.isArray(rows) || rows.length === 0) throw new Error("This report could not be restored.");
+  return rows[0];
+}
