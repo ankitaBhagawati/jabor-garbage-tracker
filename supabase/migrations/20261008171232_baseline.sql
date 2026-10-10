@@ -8,7 +8,8 @@
 --
 -- Edits from the raw dump: removed the \restrict lines, CREATE SCHEMA public and its comment
 -- (every Supabase database has them), and ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin
--- (platform managed). Added the extensions and the cron job the schema depends on.
+-- (platform managed). Added the extensions and the cron job the schema depends on, and a REVOKE
+-- block before the grants so a fresh database ends up with the same privileges (fixed 2026-10-10).
 -- Known problems in this schema are kept as they are and fixed in later migrations.
 
 create extension if not exists pgcrypto with schema extensions;
@@ -779,6 +780,13 @@ CREATE POLICY temporarily_blocked ON public.reports FOR INSERT TO anon WITH CHEC
 --
 -- Name: SCHEMA public; Type: ACL; Schema: -; Owner: -
 --
+
+-- Fresh databases get Supabase's default privileges (ALL to anon, authenticated, service_role) on
+-- every object created above. Staging and production do not have those, so clear them and let the
+-- GRANT statements below set exactly what the live databases have.
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated, service_role;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated, service_role;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated, service_role;
 
 GRANT USAGE ON SCHEMA public TO postgres;
 GRANT USAGE ON SCHEMA public TO anon;
