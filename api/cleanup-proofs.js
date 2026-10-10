@@ -1,6 +1,7 @@
 import {
   HttpError,
   assertCloudinaryUrl,
+  cloudinaryFolder,
   cleanText,
   rateLimit,
   route,
@@ -18,7 +19,7 @@ export default route("POST", async (req, res) => {
 
   const reportId = typeof body.report_id === "string" && UUID.test(body.report_id) ? body.report_id : "";
   if (!reportId) throw new HttpError(400, "Invalid report.");
-  const imageUrl = assertCloudinaryUrl(body.image_url, "jabor/cleanup-proofs");
+  const imageUrl = assertCloudinaryUrl(body.image_url, cloudinaryFolder("cleanup-proofs"));
   const cleanedDateEstimate = cleanText(body.cleaned_date_estimate, 120, { required: true, label: "Cleaning date" });
   const submittedBy = cleanText(body.submitted_by, 120, { label: "Name" });
 

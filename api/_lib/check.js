@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 
 process.env.VITE_CLOUDINARY_CLOUD_NAME = "demo";
-const { assertCloudinaryUrl, cookie, rateLimit, readCookies, route } = await import("./server.js");
+const { assertCloudinaryUrl, cloudinaryFolder, cookie, rateLimit, readCookies, route } = await import("./server.js");
 
 function mockRes() {
   const res = { headers: {}, statusCode: 200, body: null };
@@ -37,6 +37,36 @@ await assert.rejects(rateLimit(ipReq, "check", 3, 60), { status: 429 });
 assert.ok(assertCloudinaryUrl("https://res.cloudinary.com/demo/image/upload/v1/jabor/reports/a.webp", "jabor/reports"));
 assert.throws(() => assertCloudinaryUrl("https://res.cloudinary.com/other/image/upload/v1/jabor/reports/a.webp", "jabor/reports"));
 assert.throws(() => assertCloudinaryUrl("https://res.cloudinary.com/demo/image/upload/v1/jabor/cleanup-proofs/a.webp", "jabor/reports"));
+
+// Upload folders: default prefix is production's; the env var moves an environment elsewhere.
+assert.equal(cloudinaryFolder("reports"), "jabor/reports");
+assert.equal(cloudinaryFolder("cleanup-proofs"), "jabor/cleanup-proofs");
+assert.throws(() => cloudinaryFolder("anything-else"), { status: 400 });
+process.env.CLOUDINARY_FOLDER_PREFIX = "jabor-staging";
+assert.equal(cloudinaryFolder("reports"), "jabor-staging/reports");
+process.env.CLOUDINARY_FOLDER_PREFIX = "../escape";
+assert.throws(() => cloudinaryFolder("reports"), /not a valid folder path/);
+delete process.env.CLOUDINARY_FOLDER_PREFIX;
+
+// The signature route ignores any prefix the browser sends.
+process.env.CLOUDINARY_API_KEY = "k";
+process.env.CLOUDINARY_API_SECRET = "s";
+const { default: sign } = await import("../cloudinary-signature.js");
+const signReq = folder => ({ ...req("POST", { origin: "https://jabor.in", "x-forwarded-for": "9.9.9.9" }), body: { folder } });
+for (const [sent, got] of [["reports", "jabor/reports"], ["jabor/reports", "jabor/reports"], ["someone-else/cleanup-proofs", "jabor/cleanup-proofs"]]) {
+  res = mockRes();
+  await sign(signReq(sent), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.folder, got);
+}
+process.env.CLOUDINARY_FOLDER_PREFIX = "jabor-staging";
+res = mockRes();
+await sign(signReq("jabor/reports"), res);
+assert.equal(res.body.folder, "jabor-staging/reports", "an old client asking for jabor/reports still lands in the staging folder");
+res = mockRes();
+await sign(signReq("jabor/secrets"), res);
+assert.equal(res.statusCode, 400);
+delete process.env.CLOUDINARY_FOLDER_PREFIX;
 
 assert.deepEqual(readCookies({ headers: { cookie: "a=1; jabor_at=x%3Dy" } }), { a: "1", jabor_at: "x=y" });
 assert.match(cookie(req("GET"), "jabor_at", "t", 60), /HttpOnly; SameSite=Strict; Max-Age=60; Secure$/);

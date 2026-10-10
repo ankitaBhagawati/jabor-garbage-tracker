@@ -129,6 +129,18 @@ export function cleanText(value, max, { required = false, label = "Field" } = {}
   return text;
 }
 
+// Uploads go to <prefix>/reports and <prefix>/cleanup-proofs. The prefix comes from the server's
+// env so each environment writes to its own folders; the browser never chooses it.
+// Default "jabor" (production). Staging sets CLOUDINARY_FOLDER_PREFIX=jabor-staging.
+const UPLOAD_KINDS = new Set(["reports", "cleanup-proofs"]);
+
+export function cloudinaryFolder(kind) {
+  const prefix = (process.env.CLOUDINARY_FOLDER_PREFIX || "jabor").trim();
+  if (!/^[\w-]+(\/[\w-]+)*$/.test(prefix)) throw new Error("CLOUDINARY_FOLDER_PREFIX is not a valid folder path.");
+  if (!UPLOAD_KINDS.has(kind)) throw new HttpError(400, "Upload folder is not allowed.");
+  return `${prefix}/${kind}`;
+}
+
 // Only accept images uploaded to our own Cloudinary account and folder.
 export function assertCloudinaryUrl(url, folder) {
   const cloudName = process.env.VITE_CLOUDINARY_CLOUD_NAME || process.env.CLOUDINARY_CLOUD_NAME;

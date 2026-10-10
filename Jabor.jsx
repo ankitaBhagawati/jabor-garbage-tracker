@@ -114,7 +114,7 @@ const db = {
   },
   async uploadPhoto(file) {
     // Supabase stores only the Cloudinary secure URL returned by this upload.
-    return uploadImageToCloudinary(file, "jabor/reports");
+    return uploadImageToCloudinary(file, "reports");
   },
 };
 
