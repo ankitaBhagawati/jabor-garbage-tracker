@@ -18,7 +18,7 @@ export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimat
   }
 
   // Supabase stores only this Cloudinary secure URL; no image bytes go to Supabase Storage.
-  const imageUrl = await uploadImageToCloudinary(imageFile, "jabor/cleanup-proofs");
+  const imageUrl = await uploadImageToCloudinary(imageFile, "cleanup-proofs");
   return apiJson("/api/cleanup-proofs", {
     body: {
       report_id: reportId,
