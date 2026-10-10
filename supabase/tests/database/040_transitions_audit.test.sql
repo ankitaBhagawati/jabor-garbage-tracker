@@ -4,10 +4,13 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(46);
+select plan(51);
 
 -- ── Fixtures ─────────────────────────────────────────────────────────────────
 insert into public.municipalities (id, slug, name) values ('10000000-0000-4000-8000-000000000001', 'pgtap-town', 'pgTAP Town');
+-- A second municipality that has switched the nightly sweep on (a data change, no migration).
+insert into public.municipalities (id, slug, name) values ('10000000-0000-4000-8000-000000000002', 'pgtap-sweep', 'pgTAP Sweep');
+update public.municipalities set settings = jsonb_set(settings, '{auto_clean_enabled}', 'true') where slug = 'pgtap-sweep';
 insert into public.wards (id, municipality_id, number) values ('10000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-000000000001', 1);
 select set_config('test.jorhat', (select id::text from public.municipalities where slug = 'jorhat'), true);
 select set_config('test.ward1', (select w.id::text from public.wards w where w.municipality_id = current_setting('test.jorhat')::uuid and w.number = 1), true);
@@ -27,6 +30,8 @@ insert into public.reports (id, district, constituency, area, photo_url, status,
   ('40000000-0000-4000-8000-000000000004', 'Test',   'Test',   'pgtap', 'https://res.cloudinary.com/pgtap/t4.webp', 'verified',    null, now() - interval '20 days'),
   ('40000000-0000-4000-8000-000000000005', 'Jorhat', 'Jorhat', 'pgtap', 'https://res.cloudinary.com/pgtap/t5.webp', 'verified',    current_setting('test.jorhat')::uuid, now() - interval '20 days'),
   ('40000000-0000-4000-8000-000000000006', 'Test',   'Test',   'pgtap', 'https://res.cloudinary.com/pgtap/t6.webp', 'in_progress', null, now() - interval '20 days'),
+  ('40000000-0000-4000-8000-000000000008', 'Test',   'Test',   'pgtap', 'https://res.cloudinary.com/pgtap/t8.webp', 'verified',    '10000000-0000-4000-8000-000000000002', now() - interval '20 days'),
+  ('40000000-0000-4000-8000-000000000009', 'Test',   'Test',   'pgtap', 'https://res.cloudinary.com/pgtap/t9.webp', 'verified',    '10000000-0000-4000-8000-000000000001', now() - interval '20 days'),
   -- For the service role.
   ('40000000-0000-4000-8000-000000000007', 'Test',   'Test',   'pgtap', 'https://res.cloudinary.com/pgtap/t7.webp', 'verified',    null, now());
 
@@ -51,7 +56,8 @@ select throws_ok($$update public.reports set status = 'invalid' where id = '4000
 
 -- active -> in_progress
 select lives_ok($$update public.reports set status = 'in_progress', assigned_to_text = 'Ward 1 team', due_at = now() + interval '2 days' where id = '40000000-0000-4000-8000-000000000001'$$, 'active to in_progress is allowed');
-select throws_ok($$update public.reports set status = 'active' where id = '40000000-0000-4000-8000-000000000001'$$, '23514', null, 'in_progress back to active is not an allowed move');
+select lives_ok($$update public.reports set status = 'active' where id = '40000000-0000-4000-8000-000000000001'$$, 'in_progress back to active is allowed without a note');
+select lives_ok($$update public.reports set status = 'in_progress' where id = '40000000-0000-4000-8000-000000000001'$$, 'and it can be picked up again');
 
 -- ward
 select lives_ok(format($$update public.reports set ward_id = %L where id = '40000000-0000-4000-8000-000000000001'$$, current_setting('test.ward1')), 'staff can set a ward of their municipality');
@@ -81,6 +87,8 @@ select results_eq(
   $$select action, from_value ->> 'status', to_value ->> 'status', actor_email, actor_id::text, note
     from public.audit_log where id > (select id from audit_start) and entity_id = '40000000-0000-4000-8000-000000000001' and action = 'status_change' order by id$$,
   $$values ('status_change', 'verified',    'in_progress', 'jmb@pgtap.test', '20000000-0000-4000-8000-000000000002', null::text),
+           ('status_change', 'in_progress', 'active',      'jmb@pgtap.test', '20000000-0000-4000-8000-000000000002', null),
+           ('status_change', 'active',      'in_progress', 'jmb@pgtap.test', '20000000-0000-4000-8000-000000000002', null),
            ('status_change', 'in_progress', 'cleaned',     'jmb@pgtap.test', '20000000-0000-4000-8000-000000000002', null),
            ('status_change', 'cleaned',     'active',      'jmb@pgtap.test', '20000000-0000-4000-8000-000000000002', 'Wrong report marked cleaned'),
            ('status_change', 'active',      'invalid',     'jmb@pgtap.test', '20000000-0000-4000-8000-000000000002', null),
@@ -132,9 +140,15 @@ select lives_ok($$select public.auto_clean_old_reports()$$, 'the sweep runs as p
 select results_eq($$select status, cleaned_by_type, cleaned_marked_at is not null from public.reports where id = '40000000-0000-4000-8000-000000000004'$$,
   $$values ('cleaned', 'auto', true)$$, 'an old report with no municipality is swept and stamped auto');
 select results_eq($$select status, cleaned_by_type from public.reports where id = '40000000-0000-4000-8000-000000000005'$$,
-  $$values ('verified', null::text)$$, 'an old report that belongs to a municipality is not swept');
+  $$values ('verified', null::text)$$, 'an old Jorhat report is not swept (auto-clean is off for Jorhat)');
 select results_eq($$select status from public.reports where id = '40000000-0000-4000-8000-000000000006'$$,
   $$values ('in_progress')$$, 'an in-progress report is not swept');
+select results_eq($$select status, cleaned_by_type from public.reports where id = '40000000-0000-4000-8000-000000000008'$$,
+  $$values ('cleaned', 'auto')$$, 'a municipality with auto_clean_enabled = true is swept');
+select results_eq($$select status, cleaned_by_type from public.reports where id = '40000000-0000-4000-8000-000000000009'$$,
+  $$values ('verified', null::text)$$, 'a municipality without the setting switched on is not swept');
+select is((select settings ->> 'auto_clean_enabled' from public.municipalities where slug = 'jorhat'), 'false', 'Jorhat has auto-clean switched off');
+select is((select settings ->> 'auto_clean_enabled' from public.municipalities where slug = 'pgtap-town'), 'false', 'a new municipality starts with auto-clean off');
 select results_eq($$select action, actor_email, to_value ->> 'cleaned_by_type' from public.audit_log where id > (select id from audit_start) and entity_id = '40000000-0000-4000-8000-000000000004'$$,
   $$values ('status_change', 'system', 'auto')$$, 'the sweep wrote a system audit row');
 
