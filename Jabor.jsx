@@ -1365,7 +1365,8 @@ export default function Jabor() {
     const originalPushState = window.history.pushState;
     const originalReplaceState = window.history.replaceState;
 
-    initGA(GA_MEASUREMENT_ID);
+    // Staging traffic must not mix into production analytics.
+    if (import.meta.env.APP_ENV !== "staging") initGA(GA_MEASUREMENT_ID);
     sendPageView();
 
     window.history.pushState = function pushState(...args) {
