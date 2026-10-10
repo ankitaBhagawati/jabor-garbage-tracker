@@ -27,7 +27,18 @@ Then test the change by hand on `staging.jabor.in` using the steps in its PR.
 ## 3. Staging to production **(owner)**
 
 1. Open a PR from `staging` into `main`. Collect the "Production release steps" of every PR it contains.
-2. Do the steps that must come **before** the code deploy:
+2. Before any production migration, dump production's privileges and diff them against staging.
+   Production was rebuilt from a dump once and ended up with wider grants than staging; a migration
+   rehearsed on staging can behave differently on a database with different privileges.
+   ```bash
+   pg_dump "<production session pooler URL>" --schema-only --schema=public --no-owner -f .local/prod-public-with-privileges.sql
+   pg_dump "$STAGING_DB_URL" --schema-only --schema=public --no-owner -f .local/staging-public-with-privileges.sql
+   diff <(grep -E '^(GRANT|REVOKE|ALTER DEFAULT|CREATE POLICY|ALTER TABLE .* ROW LEVEL)' .local/prod-public-with-privileges.sql | sort) \
+        <(grep -E '^(GRANT|REVOKE|ALTER DEFAULT|CREATE POLICY|ALTER TABLE .* ROW LEVEL)' .local/staging-public-with-privileges.sql | sort)
+   ```
+   The only differences should be the ones the pending migrations create. Anything else is resolved
+   first. `.local/` is gitignored; the dumps hold structure only.
+3. Do the steps that must come **before** the code deploy:
    - Vercel Production env vars.
    - Edge function deploys and secrets.
    - Migrations marked "before code". Apply from your own machine, never from CI:
@@ -37,9 +48,9 @@ Then test the change by hand on `staging.jabor.in` using the steps in its PR.
      supabase db push --db-url "<production session pooler URL>"
      ```
      Then run the Supabase security and performance advisors on production.
-3. Merge into `main`. Vercel deploys `jabor.in`.
-4. Do the steps marked "after code" (for example, contract migrations).
-5. Check production:
+4. Merge into `main`. Vercel deploys `jabor.in`.
+5. Do the steps marked "after code" (for example, contract migrations).
+6. Check production:
    - `https://www.jabor.in/api/health` returns `{"status":"ok"}`.
    - Feed, Active and Cleaned tabs, a report detail with before and after photos, admin login.
    - No `X-Robots-Tag` header: `curl -sI https://www.jabor.in/ | grep -i x-robots-tag` prints nothing.
