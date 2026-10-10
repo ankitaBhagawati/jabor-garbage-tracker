@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useRef } from "react";
+import { lazy, Suspense, useCallback, useState, useEffect, useRef } from "react";
 import "./style.css";
 import SupportJaborSection, { RazorpayPaymentButton } from "./SupportJaborSection";
 import {
@@ -1279,6 +1279,9 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
   );
 }
 
+// Loaded only when an admin opens the Hidden tab, so the public bundle does not grow.
+const HiddenReports = lazy(() => import("./src/admin/HiddenReports.tsx"));
+
 function AdminDashboard({ onChanged }) {
   const [isAdmin, setIsAdmin] = useState(null);
   const [section, setSection] = useState("reports");
@@ -1304,6 +1307,7 @@ function AdminDashboard({ onChanged }) {
         {[
           { id: "reports", label: "Reports" },
           { id: "cleanup", label: "Cleanup Verification" },
+          { id: "hidden", label: "Hidden" },
         ].map(tab => (
           <button key={tab.id} className={`admin-tab ${section === tab.id ? "on" : ""}`} onClick={() => setSection(tab.id)}>
             {tab.label}
@@ -1311,9 +1315,13 @@ function AdminDashboard({ onChanged }) {
         ))}
       </div>
       <div className="card" style={{ marginBottom: 16 }}>
-        {section === "reports"
-          ? <ReportsManagementView onChanged={onChanged} onPhotoClick={setPhotoPreview} />
-          : <CleanupVerificationQueue onChanged={onChanged} onPhotoClick={setPhotoPreview} />}
+        {section === "reports" && <ReportsManagementView onChanged={onChanged} onPhotoClick={setPhotoPreview} />}
+        {section === "cleanup" && <CleanupVerificationQueue onChanged={onChanged} onPhotoClick={setPhotoPreview} />}
+        {section === "hidden" && (
+          <Suspense fallback={<Spinner />}>
+            <HiddenReports onChanged={onChanged} onPhotoClick={setPhotoPreview} />
+          </Suspense>
+        )}
       </div>
       {photoPreview && (
         <div className="admin-photo-modal" onClick={() => setPhotoPreview("")}>
