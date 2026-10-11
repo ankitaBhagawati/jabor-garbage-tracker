@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { captureError } from "../_lib/sentry.js";
+import { resolvePlacement } from "../_lib/placement.js";
+import { HttpError, serviceRest } from "../_lib/server.js";
 
 // Server-side chokepoint for public report submissions. The frontend no longer
 // inserts into Supabase directly; every report passes through rate limiting,
@@ -258,6 +260,23 @@ async function handler(req, res) {
   if (validated.error) {
     return res.status(validated.status || 400).json({ error: validated.error });
   }
+
+  // Municipality and ward are decided here from the chosen district and constituency and the
+  // answer to the municipal-area question. A municipality_id in the request is never read.
+  try {
+    const municipalities = await serviceRest("/rest/v1/municipalities?is_active=eq.true&select=id,name,settings");
+    Object.assign(validated.report, await resolvePlacement(req.body || {}, {
+      municipalities,
+      wardBelongs: async (wardId, municipalityId) => {
+        const rows = await serviceRest(`/rest/v1/wards?id=eq.${wardId}&municipality_id=eq.${municipalityId}&select=id&limit=1`);
+        return rows.length > 0;
+      },
+    }));
+  } catch (error) {
+    if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
+    throw error;
+  }
+  validated.report.source = "public";
 
   const reps = await lookupRepresentatives(validated.report.constituency);
   if (!reps) return res.status(400).json({ error: "Unknown constituency." });
