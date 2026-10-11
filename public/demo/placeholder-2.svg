@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480" role="img" aria-label="DEMO PHOTO 2">
+<rect width="640" height="480" fill="#d6d3cb"/>
+<rect y="390" width="640" height="90" fill="#a9a597" opacity="0.45"/>
+<g fill="none" stroke="#a9a597" stroke-width="6" stroke-linejoin="round"><path d="M180 250h110l-12 130h-86z"/><path d="M170 250h130"/><path d="M215 232h40"/></g>
+<g fill="#a9a597" opacity="0.9"><ellipse cx="440" cy="372" rx="70" ry="22"/><ellipse cx="400" cy="352" rx="34" ry="16"/><ellipse cx="470" cy="350" rx="30" ry="14"/></g>
+<text x="320" y="86" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#4b5a52">DEMO PHOTO 2</text>
+<text x="320" y="122" text-anchor="middle" font-family="Arial, sans-serif" font-size="20" fill="#4b5a52">Placeholder image, not a real report</text>
+</svg>
