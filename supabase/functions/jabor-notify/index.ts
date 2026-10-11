@@ -5,6 +5,7 @@
 // Reused function secrets: RESEND_API_KEY, EMAIL_FROM, EMAIL_REPLY_TO.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders, json } from "../_shared/auth.ts";
+import { authorizeNotify } from "../_shared/notify-auth.ts";
 
 interface NotifyBody {
   report_id?: string;
@@ -23,11 +24,10 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
   // Only our /api/reports server function may call this (it holds the shared secret);
-  // otherwise anyone could attach contacts to reports and use us to send email.
-  const secret = Deno.env.get("NOTIFY_SHARED_SECRET");
-  if (!secret || req.headers.get("x-jabor-notify-secret") !== secret) {
-    return json({ error: "Forbidden." }, 403);
-  }
+  // otherwise anyone could attach contacts to reports and use us to send email. A user's JWT,
+  // of any role, is not a credential here.
+  const denied = await authorizeNotify(req, Deno.env.get("NOTIFY_SHARED_SECRET"));
+  if (denied) return denied;
 
   let body: NotifyBody;
   try {
