@@ -195,8 +195,11 @@ const HIDDEN_STATUSES = ["invalid", "rejected"];
 // Admin-only: reports that are off the public site, either marked invalid or hidden with the
 // older is_deleted flag. Who hid each one, when and why comes from the audit log; reports hidden
 // before the audit log existed have no entry.
-export async function fetchHiddenReports() {
+/** @param {string | null} [municipalityId] */
+export async function fetchHiddenReports(municipalityId = null) {
   const params = new URLSearchParams();
+  // A super admin looking at one municipality; a municipality admin sends nothing (the server scopes it).
+  if (municipalityId) params.set("municipality_id", `eq.${municipalityId}`);
   params.set("select", "id,photo_url,area,landmark,district,status,is_deleted,invalid_reason,admin_note,created_at,updated_at");
   params.set("or", `(is_deleted.eq.true,status.in.(${HIDDEN_STATUSES.join(",")}))`);
   params.set("order", "updated_at.desc");

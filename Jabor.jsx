@@ -1280,70 +1280,33 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
   );
 }
 
-// Loaded only when an admin opens the Hidden tab, so the public bundle does not grow.
-const HiddenReports = lazy(() => import("./src/admin/HiddenReports.tsx"));
-const MunicipalityLanding = lazy(() => import("./src/admin/MunicipalityLanding.tsx"));
+// Loaded only when someone opens /admin, so the public bundle does not grow.
+const AdminApp = lazy(() => import("./src/admin/AdminApp.tsx"));
 
 function AdminDashboard({ onChanged }) {
   // null while checking, false when signed out, otherwise { email, role, municipality } from the server.
   const [session, setSession] = useState(null);
-  const [section, setSection] = useState("reports");
-  const [photoPreview, setPhotoPreview] = useState("");
 
   useEffect(() => {
     checkAdminSession().then(found => setSession(found || false));
   }, []);
 
-  const signOut = async () => { await signOutAdmin(); setSession(false); };
+  const signOut = useCallback(async () => { await signOutAdmin(); setSession(false); }, []);
 
   if (session === null) return <AdminEmpty icon="⏳" title="Checking admin session…" text="" />;
   if (!session) return <AdminLoginGate onUnlock={setSession} />;
-  if (session.role === "municipality_admin") {
-    return (
-      <Suspense fallback={<Spinner />}>
-        <MunicipalityLanding session={session} onSignOut={signOut} />
-      </Suspense>
-    );
-  }
+
+  // The dashboard, audit log and Hidden tabs are in src/admin for both roles. The owner also keeps the
+  // older moderation screens (AI recommendations and proof review), which stay here.
+  const extraTabs = session.role === "super_admin" ? [
+    { id: "cleanup", label: "Cleanup Verification", render: ({ onPhotoClick }) => <CleanupVerificationQueue onChanged={onChanged} onPhotoClick={onPhotoClick} /> },
+    { id: "moderation", label: "Moderation", render: ({ onPhotoClick }) => <ReportsManagementView onChanged={onChanged} onPhotoClick={onPhotoClick} /> },
+  ] : [];
 
   return (
-    <div className="slide-in" style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ marginBottom: 18, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-        <div>
-        <h1 style={{ fontSize: 24, fontWeight: 900, letterSpacing: "-0.03em" }}>Admin</h1>
-        <p style={{ color: "#3C4A42", fontSize: 13, marginTop: 4 }}>Moderate public reports, review cleanup proof replies, and keep public data trustworthy.</p>
-        </div>
-        <button className="btn-s" onClick={signOut}>Sign Out</button>
-      </div>
-      <div className="admin-tabs">
-        {[
-          { id: "reports", label: "Reports" },
-          { id: "cleanup", label: "Cleanup Verification" },
-          { id: "hidden", label: "Hidden" },
-        ].map(tab => (
-          <button key={tab.id} className={`admin-tab ${section === tab.id ? "on" : ""}`} onClick={() => setSection(tab.id)}>
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      <div className="card" style={{ marginBottom: 16 }}>
-        {section === "reports" && <ReportsManagementView onChanged={onChanged} onPhotoClick={setPhotoPreview} />}
-        {section === "cleanup" && <CleanupVerificationQueue onChanged={onChanged} onPhotoClick={setPhotoPreview} />}
-        {section === "hidden" && (
-          <Suspense fallback={<Spinner />}>
-            <HiddenReports onChanged={onChanged} onPhotoClick={setPhotoPreview} />
-          </Suspense>
-        )}
-      </div>
-      {photoPreview && (
-        <div className="admin-photo-modal" onClick={() => setPhotoPreview("")}>
-          <div className="admin-photo-modal-inner" onClick={e => e.stopPropagation()}>
-            <button className="admin-photo-close" onClick={() => setPhotoPreview("")} aria-label="Close photo preview">×</button>
-            <img src={photoPreview} alt="Admin preview" />
-          </div>
-        </div>
-      )}
-    </div>
+    <Suspense fallback={<Spinner />}>
+      <AdminApp session={session} onSignOut={signOut} extraTabs={extraTabs} onChanged={onChanged} />
+    </Suspense>
   );
 }
 
