@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import { test as base, expect } from "@playwright/test";
 import { addBypass, bypassHeaders } from "./fixtures.js";
 
@@ -11,7 +12,10 @@ import { addBypass, bypassHeaders } from "./fixtures.js";
 // scripts/create-demo-staff.mjs and load the demo data first (docs/DEMO-DATA.md).
 const JMB = { email: process.env.E2E_JMB_EMAIL, password: process.env.E2E_JMB_PASSWORD };
 const SUPER = { email: process.env.E2E_SUPER_EMAIL, password: process.env.E2E_SUPER_PASSWORD };
+const BOM = String.fromCharCode(0xfeff);
 const READ = new Set(["GET", "HEAD", "OPTIONS"]);
+// The monthly report and the hotspot ranking are database functions called with POST, but they only read.
+const READ_RPC = /^\/rest\/v1\/rpc\/(monthly_ward_report|ward_hotspots)$/;
 
 async function signIn(page, account) {
   await page.goto("/admin");
@@ -39,6 +43,8 @@ const test = base.extend({
   // The signed-in person, and the updates the page tried to send (recorded, never delivered).
   staff: [async ({ browser, baseURL, context, page }, use, testInfo) => {
     const writes = [];
+    const exports = []; // CSV export requests: recorded and answered with a stub, so no audit row is written on the site under test
+    const exportReply = { status: 200 };
     const account = testInfo.title.includes("[super]") ? SUPER : JMB;
     await addBypass(context, baseURL);
     // The guard: nothing but a GET, the sign-in and sign-out routes, and the proxy gets out.
@@ -48,15 +54,20 @@ const test = base.extend({
       // continue() skips the context handler that adds the Vercel bypass header, so it is added here.
       const pass = () => route.continue({ headers: { ...route.request().headers(), ...bypassHeaders } });
       if (READ.has(route.request().method()) || url.pathname === "/api/admin/login" || url.pathname === "/api/admin/logout") return pass();
+      if (url.pathname === "/api/admin/export" && route.request().method() === "POST") {
+        exports.push(JSON.parse(route.request().postData() || "{}"));
+        if (exportReply.status === 413) return route.fulfill({ status: 413, contentType: "application/json", body: JSON.stringify({ error: "12,345 reports match. An export holds at most 10,000. Narrow the filters (a date range or a ward) and try again." }) });
+        return route.fulfill({ status: 200, contentType: "text/csv", headers: { "content-disposition": 'attachment; filename="jabor-reports-test.csv"', "x-row-count": "2" }, body: "id,date\r\nabc,2026-10-01\r\n" });
+      }
       if (url.pathname !== "/api/admin/rest" || route.request().method() !== "POST") return route.abort();
       const envelope = JSON.parse(route.request().postData() || "{}");
-      if (!envelope.method || envelope.method === "GET") return pass(); // a read: let it through
+      if (!envelope.method || envelope.method === "GET" || (envelope.method === "POST" && READ_RPC.test(envelope.path))) return pass(); // a read: let it through
       writes.push(envelope);
       const id = /id=eq\.([0-9a-f-]{36})/.exec(envelope.path)?.[1];
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id, ...envelope.body }]) });
     });
     await context.addCookies(await sessionFor(browser, baseURL, account));
-    await use({ account, writes });
+    await use({ account, writes, exports, exportReply });
   }, { auto: true }], // signed in for every test in this file
 });
 
@@ -76,7 +87,7 @@ test.describe("municipality admin", () => {
     await page.goto("/admin");
     await expect(page.getByRole("heading", { level: 1 })).not.toHaveText("Admin");
     await expect(page.getByLabel("Municipality")).toHaveCount(0);
-    await expect(page.getByRole("navigation", { name: "Admin sections" }).getByRole("button")).toHaveText(["Dashboard", "Audit log", "Hidden"]);
+    await expect(page.getByRole("navigation", { name: "Admin sections" }).getByRole("button")).toHaveText(["Dashboard", "Monthly report", "Hotspots", "Audit log", "Hidden"]);
     await expect(page.getByRole("button", { name: "Cleanup Verification" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Moderation" })).toHaveCount(0);
 
@@ -237,6 +248,117 @@ test.describe("municipality admin", () => {
     await rows.first().getByRole("button", { name: "Open report" }).click();
     await expect(page.getByRole("dialog").getByRole("heading", { level: 3, name: "History" })).toBeVisible();
   });
+  test("the reports export sends only the filters and tells the person what happened", async ({ page, staff }) => {
+    await page.goto("/admin");
+    await expect(page.locator(".adm-tile .adm-tile-value").filter({ hasText: /^\d+$/ })).toHaveCount(7);
+    await page.getByLabel("Status", { exact: true }).selectOption("active");
+    await page.getByLabel("Ward", { exact: true }).selectOption("unassigned");
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export CSV" }).click();
+    expect((await download).suggestedFilename()).toBe("jabor-reports-test.csv");
+    await expect(page.getByRole("status").filter({ hasText: "Downloaded 2 reports." })).toBeVisible();
+    expect(staff.exports).toHaveLength(1);
+    // only the filter part of the query leaves the browser: no columns, no paging, no municipality
+    expect(Object.keys(staff.exports[0])).toEqual(["path"]);
+    const sent = new URL(staff.exports[0].path, "http://x");
+    expect(sent.pathname).toBe("/rest/v1/reports");
+    expect([...sent.searchParams.keys()]).toEqual(["and"]);
+    expect(sent.searchParams.get("and")).toContain("ward_id.is.null");
+    expect(sent.searchParams.get("and")).toContain("status.in.(verified,pending,active,reported,open)");
+
+    // too many rows: the server's sentence is shown as it is
+    staff.exportReply.status = 413;
+    await page.getByRole("button", { name: "Export CSV" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "An export holds at most 10,000" })).toBeVisible();
+  });
+
+  test("the monthly ward report matches the dashboard and can be exported and printed", async ({ page }) => {
+    await page.goto("/admin");
+    const tile = name => page.locator(".adm-tile").filter({ has: page.getByText(name, { exact: true }) }).locator(".adm-tile-value");
+    await expect(page.locator(".adm-tile .adm-tile-value").filter({ hasText: /^\d+$/ })).toHaveCount(7);
+    const tiles = {};
+    for (const name of ["Active", "In progress", "Invalid", "Overdue"]) tiles[name] = Number(await tile(name).innerText());
+
+    await page.getByRole("button", { name: "Monthly report" }).click();
+    const total = page.locator(".adm-row-total");
+    await expect(total).toBeVisible();
+    await expect(page.locator(".adm-print-title h2")).toContainText(/Monthly ward report: \w+ \d{4}/); // shown on paper only
+    // the current month ends today, so its end-of-month columns are the dashboard's numbers
+    const cells = await total.locator("td").allInnerTexts(); // received, cleaned, auto, active, in progress, invalid, overdue, median, average
+    expect(cells.slice(3, 7).map(Number)).toEqual([tiles.Active, tiles["In progress"], tiles.Invalid, tiles.Overdue]);
+    // every ward, then Unassigned, then Total
+    const names = await page.locator(".adm-rtable tbody th").allInnerTexts();
+    expect(names.slice(-2)).toEqual(["Unassigned", "Total"]);
+    expect(names.length).toBeGreaterThan(3);
+    // the ward rows add up to the total row
+    const rows = await page.locator(".adm-rtable tbody tr:not(.adm-row-total)").evaluateAll(trs => trs.map(tr => [...tr.querySelectorAll("td")].slice(0, 7).map(td => Number(td.textContent))));
+    const sums = rows[0].map((_, i) => rows.reduce((sum, row) => sum + row[i], 0));
+    expect(sums).toEqual(cells.slice(0, 7).map(Number));
+
+    // a month with nothing says so, then back to this month
+    await page.getByLabel("Month", { exact: true }).fill("2024-01");
+    await expect(page.getByText(/No reports were received in January 2024/)).toBeVisible();
+    await page.getByLabel("Month", { exact: true }).fill(new Date().toISOString().slice(0, 7));
+    await expect(total).toBeVisible();
+
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export CSV" }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toMatch(/^jabor-monthly-ward-report-\d{4}-\d{2}\.csv$/);
+    const text = (await fs.readFile(await file.path(), "utf8")).replace(BOM, "");
+    expect(text.split("\r\n")[0]).toMatch(/^ward,received,cleaned,auto_cleaned,active_at_month_end/);
+    expect(text).toContain("\r\nTotal,");
+
+    // print layout: only the report shows
+    await page.emulateMedia({ media: "print" });
+    await expect(page.locator(".adm-tabs")).toBeHidden();
+    await expect(page.locator(".adm-head")).toBeHidden();
+    await expect(page.locator(".adm-print-title")).toBeVisible();
+    await expect(page.locator(".adm-print-title h2")).toContainText("Monthly ward report");
+    await expect(total).toBeVisible();
+    await page.emulateMedia({ media: "screen" });
+  });
+
+  test("the hotspot ranking shows wards only, with its formula, and exports", async ({ page }) => {
+    await page.goto("/admin");
+    await page.getByRole("button", { name: "Hotspots" }).click();
+    await expect(page.getByText("Staff only: this is never shown to the public")).toBeVisible();
+    await expect(page.getByText("overdue × 3 + active × 1 + repeat locations × 2")).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Score" })).toHaveAttribute("title", /overdue × 3/);
+    const rows = page.locator(".adm-rtable tbody tr");
+    await expect(rows.first()).toBeVisible();
+    // ranked: the first row has the highest score, and scores never go up as the rank goes down
+    const scores = (await rows.locator("td:last-child").allInnerTexts()).map(Number);
+    expect(scores).toEqual([...scores].sort((a, b) => b - a));
+    // the score is the formula applied to the row (overdue, active, repeat places)
+    const [rank, reports, active, overdue, repeat, , score] = await rows.first().locator("td").allInnerTexts();
+    expect(rank).toBe("1");
+    expect(Number(overdue) * 3 + Number(active) + Number(repeat) * 2).toBe(Number(score));
+    expect(Number(reports)).toBeGreaterThanOrEqual(Number(active));
+    // a chart, and no map or coordinates anywhere
+    await expect(page.locator("svg.adm-chart")).toBeVisible();
+    await expect(page.locator("canvas, .leaflet-container, iframe, [class*=map]")).toHaveCount(0);
+    expect(await page.locator(".adm-main").innerText()).not.toMatch(/\b\d{2}\.\d{4,}\b/);
+
+    // a wider window loads without error, and the export has the documented columns
+    await page.getByLabel("Reports from the last").selectOption("90");
+    await expect(rows.first()).toBeVisible();
+    await expect(page.locator(".adm-state[role=alert]")).toHaveCount(0);
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export CSV" }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe("jabor-ward-hotspots-90-days.csv");
+    expect((await fs.readFile(await file.path(), "utf8")).replace(BOM, "").split("\r\n")[0]).toBe("rank,ward,reports_in_window,active,overdue,repeat_locations,average_days_to_clean,score,small_sample");
+  });
+
+  test("the proxy refuses a municipality, a window or a month it does not allow", async ({ page }) => {
+    await page.goto("/admin");
+    const post = (path, body) => proxy(page, { path, method: "POST", body });
+    expect((await post("/rest/v1/rpc/ward_hotspots", { p_days: 30, p_municipality: "00000000-0000-4000-8000-000000000000" })).status).toBe(403);
+    expect((await post("/rest/v1/rpc/ward_hotspots", { p_days: 45 })).status).toBe(403);
+    expect((await post("/rest/v1/rpc/monthly_ward_report", { p_month: "2026-08-15" })).status).toBe(403);
+  });
+
 });
 
 test.describe("owner", () => {
@@ -247,7 +369,7 @@ test.describe("owner", () => {
     const selector = page.getByLabel("Municipality");
     await expect(selector).toBeVisible();
     await expect(selector.locator("option:checked")).toContainText("Jorhat");
-    await expect(page.getByRole("navigation", { name: "Admin sections" }).getByRole("button")).toHaveText(["Dashboard", "Audit log", "Hidden", "Cleanup Verification", "Moderation"]);
+    await expect(page.getByRole("navigation", { name: "Admin sections" }).getByRole("button")).toHaveText(["Dashboard", "Monthly report", "Hotspots", "Audit log", "Hidden", "Cleanup Verification", "Moderation"]);
     await expect(page.locator(".adm-tile", { hasText: "Total" }).locator(".adm-tile-value")).not.toHaveText("0");
     await page.getByRole("button", { name: "Cleanup Verification" }).click();
     await expect(page.getByRole("heading", { name: /Cleanup Proofs/ })).toBeVisible();

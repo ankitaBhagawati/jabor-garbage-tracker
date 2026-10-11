@@ -127,3 +127,38 @@ Every request the dashboard sends (tiles, reports page, report drawer, wards, mu
 - The audit log gained one action, `note_change`, written when only `admin_note` changes (migration `t5_audit_note_changes`; apply it before deploying the code).
 - The drawer shows the after photo from the public view, not from `cleanup_proofs`, which stays denied to municipality admins.
 - Nothing in the dashboard sends DELETE, and no map, GPS or contact details are requested for a municipality admin.
+
+## 8. T6/T7: exports, monthly report, hotspots
+
+Three tabs for both staff roles (Monthly report, Hotspots, and the Export button on the Dashboard). Nothing
+public. Detail: `docs/REPORTS.md`, `docs/HOTSPOTS.md`.
+
+**Allowlist additions** (`api/_lib/access.js`, `RPCS`): the only change to the proxy.
+
+| Route | Method | Who | Body the proxy accepts |
+|---|---|---|---|
+| `/rest/v1/rpc/monthly_ward_report` | POST | super_admin, municipality_admin | `p_month` (the 1st of a month, 2020 or later); a super admin also `p_municipality` (uuid) |
+| `/rest/v1/rpc/ward_hotspots` | POST | super_admin, municipality_admin | `p_days` (30, 60 or 90); a super admin also `p_municipality` (uuid) |
+
+Everything else about an RPC call is refused: other functions, other methods, any query string, any `Prefer`,
+extra or missing keys, arrays, wrong types. A municipality admin that sends `p_municipality` is refused
+(`scope-key`); for them the proxy adds their own. Other database functions (including `private.*` helpers and
+`auto_clean_old_reports`) are not routes.
+
+**New route** `POST /api/admin/export` (not through the table proxy): same session and role lookup as the proxy.
+The body holds one key, `path`, and it must be `/rest/v1/reports` with only an `and` filter (and, for a super
+admin, `municipality_id`). Any other key, column, order or paging is refused with 400. The server then reads
+with `authorize()` (so the municipality scope is added for a municipality admin and a municipality admin naming
+one is refused with 403), writes the audit row with the service role, and only then sends the file.
+
+**Database:** both functions are `SECURITY INVOKER`: row level security on `reports`, `wards` and `audit_log`
+applies, and the functions check the caller again (a municipality admin gets their own municipality whatever
+is passed; a super admin names one; deactivated and non-staff users get no rows). `EXECUTE` is granted to
+`authenticated` only; `anon` and `PUBLIC` cannot run them. No coordinates, contact details or free text are in
+either result.
+
+| | super_admin | municipality_admin | anon |
+|---|---|---|---|
+| `monthly_ward_report`, `ward_hotspots` through the proxy | yes, names the municipality | yes, own municipality only | no (no session) |
+| The same functions called directly in Supabase | yes | own municipality only | permission denied |
+| `POST /api/admin/export` | yes | own municipality only | 401 |

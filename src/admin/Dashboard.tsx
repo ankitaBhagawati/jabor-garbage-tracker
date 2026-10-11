@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { adminRequest } from "./adminApi.ts";
+import { adminRequest, downloadReportsCsv } from "./adminApi.ts";
 import { ageDays, ageLabel, isOverdue, statusOf, wardLabel } from "./format.ts";
-import { PAGE_SIZE, TILE_KEYS, reportsPageEnvelope, tileEnvelope, type Scope, type TileKey } from "./queryBuilders.ts";
+import { PAGE_SIZE, TILE_KEYS, exportEnvelope, reportsPageEnvelope, tileEnvelope, type Scope, type TileKey } from "./queryBuilders.ts";
 import { EmptyBox, ErrorBox, OverdueBadge, Pager, StatusBadge } from "./Pieces.tsx";
 import { EMPTY_FILTERS, type Filters, type ReportRow, type Sort, type SortKey, type StatusFilter, type Ward } from "./types.ts";
 import { useAsync } from "./useAsync.ts";
@@ -64,6 +64,8 @@ export default function Dashboard({ scope, wards, overdueDays, version, onOpenRe
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<Sort>({ key: "created_at", dir: "desc" });
   const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<{ text: string; error: boolean } | null>(null);
 
   // The search box waits a moment after typing before it asks the server.
   useEffect(() => {
@@ -81,6 +83,20 @@ export default function Dashboard({ scope, wards, overdueDays, version, onOpenRe
   const total = list.data?.total ?? null;
   const now = new Date();
   const filtersActive = JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS);
+
+  // The server builds the file from the same filters the table uses, and records the export in the audit log.
+  const exportCsv = async () => {
+    setExporting(true);
+    setExportMessage(null);
+    try {
+      const { rows: count } = await downloadReportsCsv(exportEnvelope(scope, filters, new Date(), overdueDays));
+      setExportMessage({ text: `Downloaded ${count.toLocaleString("en-IN")} ${count === 1 ? "report" : "reports"}.`, error: false });
+    } catch (e) {
+      setExportMessage({ text: e instanceof Error ? e.message : "The export failed. Please try again.", error: true });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const set = (patch: Partial<Filters>) => setFilters(f => ({ ...f, ...patch }));
   const clearFilters = () => { setSearch(""); setFilters(EMPTY_FILTERS); };
@@ -134,7 +150,9 @@ export default function Dashboard({ scope, wards, overdueDays, version, onOpenRe
             Overdue only
           </label>
           {filtersActive && <button type="button" className="btn-s adm-clear" onClick={clearFilters}>Clear filters</button>}
+          <button type="button" className="btn-s adm-export" disabled={exporting} onClick={exportCsv}>{exporting ? "Preparing…" : "Export CSV"}</button>
         </div>
+        {exportMessage && <p className={exportMessage.error ? "adm-export-msg adm-export-error" : "adm-export-msg"} role={exportMessage.error ? "alert" : "status"}>{exportMessage.text}</p>}
 
         {list.error ? (
           <ErrorBox message={list.error} onRetry={list.reload} />
