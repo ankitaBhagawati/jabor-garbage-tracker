@@ -66,9 +66,16 @@ settings (`STAGING_DB_URL` is the session pooler connection string).
    ```bash
    node --env-file=.env.local scripts/wipe-staging-data.mjs --execute
    ```
-4. **Create the demo staff** (optional). `scripts/create-demo-staff.mjs` belongs to T3 and is not written yet.
-   Without staff accounts the demo history is attributed to a fake `jmb-demo-staff@example.invalid`.
-   Once real demo accounts exist, run the seed with `--replace` to attribute the history to them.
+4. **Create the demo staff** (optional, but do it before the seed so the history names them). Set
+   `DEMO_SUPER_EMAIL`, `DEMO_SUPER_PASSWORD`, `DEMO_JMB_EMAIL` and `DEMO_JMB_PASSWORD` in `.env.local`
+   (passwords of 12 or more characters; they are never printed), and `SUPABASE_SERVICE_ROLE_KEY` for staging. Dry run first:
+   ```bash
+   node --env-file=.env.local scripts/create-demo-staff.mjs
+   node --env-file=.env.local scripts/create-demo-staff.mjs --execute
+   ```
+   It creates a super admin and a Jorhat municipality admin, or updates them if they already exist. Without staff
+   accounts the demo history is attributed to a fake `jmb-demo-staff@example.invalid`; if you create them later, run
+   the seed with `--replace` to attribute the history to them.
 5. **Seed, dry run.**
    ```bash
    node --env-file=.env.local scripts/seed-demo-data.mjs
