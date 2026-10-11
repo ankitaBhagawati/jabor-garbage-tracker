@@ -1,5 +1,6 @@
 import { HttpError, cleanText, rateLimit, route } from "../_lib/server.js";
-import { isAdminUser, setSession, supabaseAuth } from "../_lib/admin.js";
+import { setSession, supabaseAuth } from "../_lib/admin.js";
+import { resolveStaff, sessionBody } from "../_lib/staff.js";
 
 export default route("POST", async (req, res) => {
   await rateLimit(req, "admin-login", 5, 15 * 60);
@@ -15,11 +16,15 @@ export default route("POST", async (req, res) => {
     console.error("[jabor] admin login refused by Supabase:", data?.error_code, data?.msg);
     throw new HttpError(401, `Sign-in unavailable: ${data?.msg || "authentication error"}.`);
   }
-  if (!isAdminUser(data?.user)) {
-    await supabaseAuth("logout", {}, data.access_token);
-    throw new HttpError(403, "This account does not have Jabor admin access.");
+  let staff;
+  try {
+    staff = await resolveStaff(data.access_token);
+  } catch (error) {
+    // A valid password for an account that is not active staff gets no session.
+    await supabaseAuth("logout", {}, data.access_token).catch(() => {});
+    throw error instanceof HttpError && error.status === 403 ? error : new HttpError(403, "This account does not have Jabor admin access.");
   }
 
   setSession(req, res, data);
-  return res.status(200).json({ email: data.user.email });
+  return res.status(200).json(sessionBody(staff));
 });
