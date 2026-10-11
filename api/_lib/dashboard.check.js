@@ -211,4 +211,32 @@ for (const b of bodies) {
   built++;
 }
 
+// T6/T7: the CSV export, the monthly report and the hotspot ranking
+const EXPORT_COLUMNS = "id,created_at,ward_id,status,is_deleted,cleaned_by_type,cleaned_at,cleaned_marked_at,description"; // the server's fixed list (api/admin/export.js)
+for (const status of ["", "active", "in_progress", "cleaned", "invalid", "auto_cleaned"]) for (const ward of ["", "unassigned", W1]) for (const overdueOnly of [false, true]) {
+  for (const q of ["", `bad"quote\\ *`]) {
+    const filters = { ...EMPTY_FILTERS, status, ward, overdueOnly, q, from: "2026-09-01", to: "2026-10-11" };
+    for (const [staff, scope] of [[SUPER, SCOPE_SUPER], [MUNI, SCOPE_MUNI]]) {
+      const envelope = Q.exportEnvelope(scope, filters, NOW, 7);
+      const keys = [...new URLSearchParams(envelope.path.split("?")[1]).keys()];
+      assert.ok(keys.every(k => k === "and" || k === "municipality_id"), `the export sends only filters: ${keys}`);
+      assert.deepEqual(keys.includes("municipality_id"), staff.role === "super_admin", "only a super admin names the municipality");
+      // what the server does with it: fixed columns, order and paging, then the same allowlist
+      const plan = authorize(staff, { path: `${envelope.path}${envelope.path.includes("?") ? "&" : "?"}select=${EXPORT_COLUMNS}&order=created_at.asc,id.asc&limit=1000&offset=0`, method: "GET", prefer: "count=exact" });
+      assert.deepEqual(params(plan).getAll("municipality_id"), [`eq.${M1}`], "the export is scoped");
+      built++;
+    }
+  }
+}
+assert.equal(Q.exportEnvelope(SCOPE_MUNI, EMPTY_FILTERS, NOW, 7).path, "/rest/v1/reports?", "with no filters the export is the whole municipality");
+for (const [name, build] of [["monthly", scope => Q.monthlyEnvelope(scope, "2026-08")], ["hotspots 30", scope => Q.hotspotsEnvelope(scope, 30)], ["hotspots 60", scope => Q.hotspotsEnvelope(scope, 60)], ["hotspots 90", scope => Q.hotspotsEnvelope(scope, 90)]]) {
+  const asSuper = allowed(SUPER, build(SCOPE_SUPER), name);
+  const asMuni = allowed(MUNI, build(SCOPE_MUNI), name);
+  assert.equal(JSON.parse(asSuper.body).p_municipality, M1, `${name}: a super admin's chosen municipality`);
+  assert.equal(JSON.parse(asMuni.body).p_municipality, M1, `${name}: the server scopes a municipality admin`);
+  assert.equal("p_municipality" in (build(SCOPE_MUNI).body ?? {}), false, `${name}: a municipality admin never sends one`);
+  assert.equal(asMuni.method, "POST");
+  built++;
+}
+
 console.log(`dashboard logic ok (${built} request shapes checked for both roles)`);

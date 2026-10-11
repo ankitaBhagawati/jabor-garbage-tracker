@@ -6,7 +6,7 @@ import type { Filters, Sort, Status } from "./types.ts";
 
 export const PAGE_SIZE = 25;
 
-export type Envelope = { path: string; method: "GET" | "PATCH"; prefer?: string; body?: Record<string, unknown> };
+export type Envelope = { path: string; method: "GET" | "PATCH" | "POST"; prefer?: string; body?: Record<string, unknown> };
 // municipalityId is set for a super admin (the selected municipality). A municipality admin never sends
 // it: the proxy adds the scope on the server.
 export type Scope = { municipalityId: string | null };
@@ -132,4 +132,21 @@ export const hiddenEnvelope = (scope: Scope): Envelope => ({
 export const hiddenHistoryEnvelope = (ids: string[]): Envelope => ({
   path: `/rest/v1/audit_log?${query([["select", "entity_id,action,actor_email,to_value,note,created_at"], ["entity_type", "eq.report"], ["entity_id", `in.(${ids.join(",")})`], ["action", "in.(hidden,status_change)"], ["order", "created_at.desc"], ["limit", "1000"]])}`,
   method: "GET",
+});
+
+// ── Exports and reports (T6/T7) ──────────────────────────────────────────────
+// The CSV export sends only the filters. The server picks the columns, the order and the paging.
+export const exportEnvelope = (scope: Scope, filters: Filters, now: Date, overdueDays: number): { path: string } => ({
+  path: `/rest/v1/reports?${query(scoped(scope, andParam(reportConditions(filters, now, overdueDays))))}`,
+});
+
+// month is "yyyy-mm". A municipality admin never sends a municipality: the proxy adds their own.
+export const monthlyEnvelope = (scope: Scope, month: string): Envelope => ({
+  path: "/rest/v1/rpc/monthly_ward_report", method: "POST",
+  body: { p_month: `${month}-01`, ...(scope.municipalityId ? { p_municipality: scope.municipalityId } : {}) },
+});
+
+export const hotspotsEnvelope = (scope: Scope, days: 30 | 60 | 90): Envelope => ({
+  path: "/rest/v1/rpc/ward_hotspots", method: "POST",
+  body: { p_days: days, ...(scope.municipalityId ? { p_municipality: scope.municipalityId } : {}) },
 });

@@ -132,3 +132,51 @@
   .adm-head-right { width: 100%; }
   .adm-who { max-width: 100%; }
 }
+
+/* ── Reports: export, monthly ward report, hotspots ─────────────────────── */
+.adm-export-msg { font-size: 14px; margin: 8px 0 0; color: var(--adm-muted); }
+.adm-export-error { color: #9a1b10; }
+.adm-note { font-size: 14px; background: #dcebff; color: #124a99; border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+.adm-notes { font-size: 13px; color: var(--adm-muted); margin-top: 12px; }
+.adm-notes p { margin: 6px 0; }
+.adm-note-small { font-size: 13px; margin: 10px 0 0; }
+.adm-formula { font-size: 14px; background: var(--adm-bg); border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+.adm-formula span { border-bottom: 1px dotted var(--adm-muted); cursor: help; }
+.adm-print-title { display: none; }
+
+.adm-rtable { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 640px; }
+.adm-rtable th, .adm-rtable td { padding: 9px 10px; border-bottom: 1px solid #e3ebe5; text-align: left; vertical-align: middle; }
+.adm-rtable thead th { font-size: 12px; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; color: var(--adm-muted); border-bottom: 1px solid var(--adm-line); white-space: normal; line-height: 1.2; }
+.adm-rtable tbody th { font-weight: 700; white-space: nowrap; }
+.adm-rtable .adm-num { text-align: right; font-variant-numeric: tabular-nums; }
+.adm-rtable tbody tr:hover { background: var(--adm-bg); }
+.adm-row-total th, .adm-row-total td { font-weight: 900; border-top: 2px solid var(--adm-line); background: var(--adm-bg); }
+.adm-badge-small { background: #fff1cf; color: #7a5200; margin-left: 8px; }
+
+.adm-chart { display: block; width: 100%; max-width: 640px; height: auto; margin: 8px 0 14px; }
+.adm-chart-label, .adm-chart-value { font-size: 12px; fill: var(--adm-muted); font-weight: 700; }
+.adm-chart-value { fill: var(--adm-ink); }
+.adm-bar { fill: var(--adm-green); }
+.adm-bar-small { fill: #d9b45a; }
+
+@media (max-width: 720px) {
+  .adm-rtable { font-size: 13px; }
+  .adm-rtable th, .adm-rtable td { padding: 8px 8px; }
+}
+
+/* Print (the browser's "Save as PDF"): the report and nothing else. */
+@page { size: A4 landscape; margin: 12mm; }
+@media print {
+  body { background: #fff !important; }
+  header:not(.adm-head), footer, .adm-head, .adm-tabs, .adm-noprint, .adm-drawer, .adm-export, dialog { display: none !important; }
+  .adm { padding: 0 !important; max-width: none !important; }
+  .adm-panel { border: 0 !important; box-shadow: none !important; padding: 0 !important; background: #fff !important; }
+  .adm-print-title { display: block; margin-bottom: 10px; }
+  .adm-print-title h2 { font-size: 20px; margin: 2px 0; }
+  .adm-table-wrap { overflow: visible !important; opacity: 1 !important; }
+  .adm-rtable { font-size: 11pt; min-width: 0; }
+  .adm-rtable tr { break-inside: avoid; }
+  .adm-row-total th, .adm-row-total td { background: #f1f1f1 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .adm-note { border: 1px solid #999; background: #fff; color: #000; }
+  .adm-notes { color: #000; }
+}

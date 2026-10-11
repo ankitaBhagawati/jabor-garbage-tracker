@@ -1,18 +1,7 @@
-import type { AuditRow, ReportRow, Status, Ward } from "./types.ts";
+import type { AuditRow, Status, Ward } from "./types.ts";
 
-export const DAY = 24 * 60 * 60 * 1000;
-
-// Stored values older than the workflow: these all mean Active. See docs/STATUS-MODEL.md.
-export const LEGACY_ACTIVE = ["verified", "pending", "active", "reported", "open"];
-
-// The same rule as private.normalize_status in the database. A hidden report counts as invalid.
-export function statusOf(report: Pick<ReportRow, "status" | "is_deleted">): Status {
-  if (report.is_deleted) return "invalid";
-  if (report.status && LEGACY_ACTIVE.includes(report.status)) return "active";
-  if (report.status === "in_progress") return "in_progress";
-  if (report.status === "cleaned") return "cleaned";
-  return "invalid";
-}
+export { DAY, LEGACY_ACTIVE, statusOf, ageDays, isOverdue, wardLabel, overdueDaysFrom } from "./rules.js";
+import { statusOf, wardLabel } from "./rules.js";
 
 export const STATUS_LABEL: Record<Status, string> = { active: "Active", in_progress: "In progress", cleaned: "Cleaned", invalid: "Invalid" };
 export const INVALID_REASONS: { value: string; label: string }[] = [
@@ -25,14 +14,7 @@ export const WASTE_LABEL: Record<string, string> = {
   mixed: "Mixed", plastic: "Plastic", construction: "Construction", organic: "Organic", water: "Water body", medical: "Medical",
 };
 
-export const ageDays = (createdAt: string, now: Date) => Math.max(0, Math.floor((now.getTime() - Date.parse(createdAt)) / DAY));
 export const ageLabel = (days: number) => (days === 0 ? "Today" : days === 1 ? "1 day" : `${days} days`);
-
-// Overdue means Active for longer than the municipality's threshold. Reports in progress are being worked on.
-export const isOverdue = (report: Pick<ReportRow, "status" | "is_deleted" | "created_at">, thresholdDays: number, now: Date) =>
-  statusOf(report) === "active" && now.getTime() - Date.parse(report.created_at) > thresholdDays * DAY;
-
-export const wardLabel = (ward: Ward) => (ward.name?.trim() ? `Ward ${ward.number} · ${ward.name.trim()}` : `Ward ${ward.number}`);
 
 const DATE = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" });
 const DATE_TIME = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -42,7 +24,7 @@ export const formatDateTime = (iso: string | null | undefined) => (iso ? DATE_TI
 export const ACTION_LABEL: Record<string, string> = {
   report_created: "Report received", status_change: "Status changed", ward_change: "Ward changed", assignment_change: "Assignment changed",
   cleaned_details_change: "Cleaned details changed", note_change: "Note changed", hidden: "Hidden", unhidden: "Restored",
-  staff_created: "Staff account created", staff_changed: "Staff account changed", staff_deleted: "Staff account removed",
+  export: "Export downloaded", staff_created: "Staff account created", staff_changed: "Staff account changed", staff_deleted: "Staff account removed",
 };
 
 export const actorLabel = (email: string) => (email === "public" ? "Public (citizen)" : email === "system" ? "System" : email);
@@ -69,6 +51,7 @@ export function describeAudit(row: Pick<AuditRow, "action" | "from_value" | "to_
     case "assignment_change": return to.assigned_to_text ? `Assigned to ${String(to.assigned_to_text)}.` : "Assignment cleared.";
     case "cleaned_details_change": return `Cleaned details changed${to.cleaned_by_name ? ` (${String(to.cleaned_by_name)})` : ""}.`;
     case "note_change": return to.admin_note ? "Internal note updated." : "Internal note cleared.";
+    case "export": return `Downloaded a CSV of ${Number(to.rows ?? 0).toLocaleString("en-IN")} reports${to.filters ? " with filters" : ", no filters"}.`;
     case "hidden": return "Hidden from the public site.";
     case "unhidden": return "Restored to the public site.";
     case "staff_created": return `Staff account created${to.role ? ` (${String(to.role).replace("_", " ")})` : ""}.`;

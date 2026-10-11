@@ -125,6 +125,22 @@ const TABLES = {
 // server with a shared secret, never through this proxy.
 const FUNCTIONS = { "jabor-recommendations": ["super_admin"], "jabor-execute": ["super_admin"], "jabor-embed": ["super_admin"] };
 
+// Database functions (RPC), called as POST /rest/v1/rpc/<name> with a JSON body of arguments. Each lists its
+// roles and an exact check per argument. The functions are SECURITY INVOKER and check the caller again, so
+// RLS and the functions themselves are the second layer. A municipality admin never sends p_municipality:
+// the proxy adds their own, as it does for the table scope.
+const MONTH_START = /^(\d{4})-(\d{2})-01$/;
+const RPCS = {
+  monthly_ward_report: {
+    roles: ["super_admin", "municipality_admin"],
+    args: { p_month: v => typeof v === "string" && MONTH_START.test(v) && +MONTH_START.exec(v)[2] >= 1 && +MONTH_START.exec(v)[2] <= 12 && +MONTH_START.exec(v)[1] >= 2020 },
+  },
+  ward_hotspots: {
+    roles: ["super_admin", "municipality_admin"],
+    args: { p_days: v => v === 30 || v === 60 || v === 90 },
+  },
+};
+
 const PREFER_ALLOWED = new Set(["return=minimal", "return=representation", "count=exact"]);
 const OPERATORS = "eq|neq|gt|gte|lt|lte|in|is|ilike|like";
 const CONDITION = new RegExp(`^(?:not\\.)?([a-z_]+)\\.(?:not\\.)?(?:${OPERATORS})\\.`, "s");
@@ -211,6 +227,27 @@ export function authorize(staff, request) {
     return { path: pathOnly, method, prefer: undefined, body: text };
   }
 
+  // ── Database functions ─────────────────────────────────────────────────────
+  const rpc = /^\/rest\/v1\/rpc\/([a-z_]+)$/.exec(pathOnly);
+  if (rpc) {
+    const spec = RPCS[rpc[1]];
+    if (!spec || method !== "POST" || rawQuery || !spec.roles.includes(role)) deny("rpc");
+    if (request.prefer != null) deny("prefer");
+    const data = request.body;
+    if (typeof data !== "object" || data === null || Array.isArray(data)) deny("body-shape");
+    const scoped = role === "municipality_admin";
+    const allowed = [...Object.keys(spec.args), ...(scoped ? [] : ["p_municipality"])];
+    const keys = Object.keys(data);
+    if (scoped && keys.includes("p_municipality")) deny("scope-key");
+    if (keys.length !== allowed.length || keys.some(k => !allowed.includes(k))) deny("body-key");
+    for (const [name, valid] of Object.entries(spec.args)) if (!valid(data[name])) deny("rpc-arg");
+    const municipality = scoped ? staff.municipalityId : data.p_municipality;
+    if (typeof municipality !== "string" || !UUID.test(municipality)) deny(scoped ? "scope-missing" : "rpc-arg");
+    const clean = { p_municipality: municipality };
+    for (const name of Object.keys(spec.args)) clean[name] = data[name];
+    return { path: pathOnly, method, prefer: undefined, body: JSON.stringify(clean) };
+  }
+
   // ── Tables ─────────────────────────────────────────────────────────────────
   const match = /^\/rest\/v1\/([a-z_]+)$/.exec(pathOnly);
   const table = match && TABLES[match[1]];
@@ -293,5 +330,6 @@ export function summary(role) {
     if (ops.length) out[name] = ops;
   }
   out.functions = Object.keys(FUNCTIONS).filter(f => FUNCTIONS[f].includes(role));
+  out.rpc = Object.keys(RPCS).filter(f => RPCS[f].roles.includes(role));
   return out;
 }

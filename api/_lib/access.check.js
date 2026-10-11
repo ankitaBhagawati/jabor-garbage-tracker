@@ -67,7 +67,7 @@ assert.equal(cells, 2 * ALL_TABLES.length * 4);
 // The summary the docs quote.
 for (const [role, tables] of Object.entries(EXPECTED)) {
   for (const [table, ops] of Object.entries(tables)) assert.deepEqual(summary(role)[table], ops.split(","));
-  assert.deepEqual(Object.keys(summary(role)).filter(k => k !== "functions").sort(), Object.keys(tables).sort());
+  assert.deepEqual(Object.keys(summary(role)).filter(k => k !== "functions" && k !== "rpc").sort(), Object.keys(tables).sort());
 }
 
 // ── Part 1b: scope is added by the server ────────────────────────────────────
@@ -213,6 +213,53 @@ refused(() => authorize(SUPER, { path: "/functions/v1/jabor-execute", method: "G
 refused(() => authorize(SUPER, { path: "/functions/v1/jabor-execute", method: "POST", body: [1] }), "function-body");
 refused(() => authorize(SUPER, { path: "/functions/v1/jabor-execute", method: "POST", body: { a: "x".repeat(100001) } }), "function-body");
 refused(() => authorize(SUPER, { path: "/functions/v1/jabor-execute", method: "POST", body: {}, prefer: "return=minimal" }), "prefer");
+
+// database functions (T6/T7): the monthly report and the hotspot ranking
+const rpc = (staff, name, body, extra = {}) => authorize(staff, { path: `/rest/v1/rpc/${name}`, method: "POST", body, ...extra });
+const M2U = "22222222-2222-4222-8222-222222222222";
+for (const [name, args] of [["monthly_ward_report", { p_month: "2026-08-01" }], ["ward_hotspots", { p_days: 30 }]]) {
+  // a super admin names the municipality
+  const own = rpc(SUPER, name, { ...args, p_municipality: M2U });
+  assert.deepEqual([own.path, own.method], [`/rest/v1/rpc/${name}`, "POST"]);
+  assert.deepEqual(JSON.parse(own.body), { p_municipality: M2U, ...args });
+  // a municipality admin gets their own, added by the server
+  const mine = rpc(MUNI, name, args);
+  assert.deepEqual(JSON.parse(mine.body), { p_municipality: M1, ...args });
+  // smuggling: choosing a municipality, extra keys, missing keys, wrong types, query strings, forged headers
+  refused(() => rpc(MUNI, name, { ...args, p_municipality: M2U }), "scope-key");
+  refused(() => rpc(MUNI, name, { ...args, p_municipality: M1 }), "scope-key");
+  refused(() => rpc(MUNI, name, { ...args, extra: 1 }), "body-key");
+  refused(() => rpc(SUPER, name, { ...args, p_municipality: M2U, extra: 1 }), "body-key");
+  refused(() => rpc(SUPER, name, args), "body-key"); // a super admin must name the municipality
+  refused(() => rpc(SUPER, name, { ...args, p_municipality: "not-a-uuid" }), "rpc-arg");
+  refused(() => rpc(SUPER, name, { ...args, p_municipality: `${M2U}' or 1=1` }), "rpc-arg");
+  refused(() => rpc(SUPER, name, { ...args, p_municipality: [M2U] }), "rpc-arg");
+  refused(() => rpc(MUNI, name, {}), "body-key");
+  refused(() => rpc(MUNI, name, [args]), "body-shape");
+  refused(() => rpc(MUNI, name, null), "body-shape");
+  refused(() => authorize(MUNI, { path: `/rest/v1/rpc/${name}?p_municipality=${M2U}`, method: "POST", body: args }), "rpc");
+  refused(() => authorize(MUNI, { path: `/rest/v1/rpc/${name}?select=*`, method: "POST", body: args }), "rpc");
+  refused(() => authorize(MUNI, { path: `/rest/v1/rpc/${name}`, method: "GET" }), "rpc");
+  refused(() => authorize(MUNI, { path: `/rest/v1/rpc/${name}`, method: "PATCH", body: args }), "rpc");
+  refused(() => authorize(MUNI, { path: `/rest/v1/rpc/${name}`, method: "DELETE" }), "rpc");
+  refused(() => rpc(MUNI, name, args, { prefer: "return=representation" }), "prefer");
+  refused(() => rpc(MUNI, name, args, { prefer: "count=exact" }), "prefer");
+  refused(() => authorize({ ...MUNI, municipalityId: null }, { path: `/rest/v1/rpc/${name}`, method: "POST", body: args }), "scope-missing");
+  refused(() => authorize({ ...MUNI, municipalityId: "x" }, { path: `/rest/v1/rpc/${name}`, method: "POST", body: args }), "scope-missing");
+}
+for (const bad of ["2026-08-02", "2026-8-01", "2026-13-01", "2026-00-01", "2019-08-01", "2026-08-01T00:00:00", "'2026-08-01", 202608, null, undefined, ["2026-08-01"]]) {
+  refused(() => rpc(MUNI, "monthly_ward_report", { p_month: bad }), "rpc-arg");
+}
+for (const bad of [45, 0, -30, 31, "30", 30.5, null, undefined, [30], 3e1 + 0.1, 90000]) refused(() => rpc(MUNI, "ward_hotspots", { p_days: bad }), "rpc-arg");
+for (const days of [30, 60, 90]) assert.doesNotThrow(() => rpc(MUNI, "ward_hotspots", { p_days: days }));
+// only the two functions exist, and similar names, other schemas and the private helpers are not routes
+for (const path of ["/rest/v1/rpc/auto_clean_old_reports", "/rest/v1/rpc/normalize_status", "/rest/v1/rpc/is_super_admin", "/rest/v1/rpc/monthly_ward_report2", "/rest/v1/rpc/",
+  "/rest/v1/rpc/MONTHLY_WARD_REPORT", "/rest/v1/rpc/monthly_ward_report/x", "/rest/v1/rpc/..%2Frpc%2Fward_hotspots", "/rest/v1/rpc/ward_hotspots%00", "/rest/v1//rpc/ward_hotspots"]) {
+  for (const staff of [SUPER, MUNI]) refused(() => authorize(staff, { path, method: "POST", body: { p_days: 30, p_municipality: M2U } }));
+}
+// the two roles' view of the allowlist
+assert.deepEqual(summary("super_admin").rpc, ["monthly_ward_report", "ward_hotspots"]);
+assert.deepEqual(summary("municipality_admin").rpc, ["monthly_ward_report", "ward_hotspots"]);
 
 // ── Part 1d: everything the current admin screens send is still allowed for a super admin ──
 {

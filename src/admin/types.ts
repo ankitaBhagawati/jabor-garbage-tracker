@@ -62,3 +62,35 @@ export const EMPTY_FILTERS: Filters = { status: "", ward: "", from: "", to: "", 
 
 export type SortKey = "created_at" | "updated_at" | "status" | "area";
 export type Sort = { key: SortKey; dir: "asc" | "desc" };
+
+// One row of the monthly ward report (public.monthly_ward_report). kind is "ward", "unassigned" or "total".
+export type MonthlyRow = {
+  kind: "ward" | "unassigned" | "total";
+  ward_id: string | null;
+  ward_number: number | null;
+  ward_name: string | null;
+  received: number;
+  cleaned: number;
+  auto_cleaned: number;
+  active: number;
+  in_progress: number;
+  invalid: number;
+  overdue: number;
+  median_days: number | null;
+  avg_days: number | null;
+};
+
+// One row of the hotspot ranking (public.ward_hotspots).
+export type HotspotRow = {
+  ward_id: string;
+  ward_number: number;
+  ward_name: string | null;
+  reports: number;
+  active: number;
+  overdue: number;
+  repeat_locations: number;
+  avg_days_to_clean: number | null;
+  score: number;
+  rank: number;
+};
+export type HotspotWindow = 30 | 60 | 90;
