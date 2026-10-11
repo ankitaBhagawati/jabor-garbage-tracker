@@ -1,6 +1,6 @@
 // Self-check for the staging guard: `node scripts/lib/target.check.mjs`
 import assert from "node:assert/strict";
-import { PRODUCTION_REF, STAGING_REF, resolveTarget } from "./target.mjs";
+import { PRODUCTION_REF, STAGING_REF, resolveApiTarget, resolveTarget } from "./target.mjs";
 
 const pooler = ref => `postgresql://postgres.${ref}:secret@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres`;
 const direct = ref => `postgresql://postgres:secret@db.${ref}.supabase.co:5432/postgres`;
@@ -40,5 +40,26 @@ assert.equal(local.confirm, "local");
 assert.equal(local.pg.PGHOST, "127.0.0.1");
 refuse({ LOCAL_DB_URL: "postgresql://postgres:x@db.example.com:5432/postgres" }, /on this machine/, { local: true });
 refuse({ LOCAL_DB_URL: pooler(STAGING_REF) }, /on this machine|staging database/, { local: true });
+
+// ── The API target (create-demo-staff) ───────────────────────────────────────
+const jwtKey = ref => `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ role: "service_role", ref })).toString("base64url")}.c2ln`;
+const api = (env, opts = {}) => resolveApiTarget({ env, ...opts });
+const stagingUrl = `https://${STAGING_REF}.supabase.co`;
+assert.equal(api({ SUPABASE_URL: stagingUrl, SUPABASE_SERVICE_ROLE_KEY: jwtKey(STAGING_REF) }).kind, "staging");
+assert.equal(api({ VITE_SUPABASE_URL: stagingUrl, SUPABASE_SERVICE_ROLE_KEY: "sb_secret_abc" }).kind, "staging", "a key with no ref is accepted for the staging URL");
+assert.equal(api({ SUPABASE_URL: "http://127.0.0.1:54321", SUPABASE_SERVICE_ROLE_KEY: "k" }, { local: true }).confirm, "local");
+const refuseApi = (env, pattern, opts) => assert.throws(() => api(env, opts), pattern);
+refuseApi({ SUPABASE_URL: `https://${PRODUCTION_REF}.supabase.co`, SUPABASE_SERVICE_ROLE_KEY: jwtKey(PRODUCTION_REF) }, /production/);
+refuseApi({ SUPABASE_URL: stagingUrl, SUPABASE_SERVICE_ROLE_KEY: jwtKey(PRODUCTION_REF) }, /production/);
+refuseApi({ SUPABASE_URL: stagingUrl, SUPABASE_SERVICE_ROLE_KEY: jwtKey("aaaaaaaaaaaaaaaaaaaa") }, /different project/);
+refuseApi({ SUPABASE_URL: "https://aaaaaaaaaaaaaaaaaaaa.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "k" }, /not the staging project/);
+refuseApi({ SUPABASE_URL: "https://example.com", SUPABASE_SERVICE_ROLE_KEY: "k" }, /not the staging project/);
+refuseApi({ SUPABASE_URL: stagingUrl, VITE_SUPABASE_URL: `https://${PRODUCTION_REF}.supabase.co`, SUPABASE_SERVICE_ROLE_KEY: "k" }, /production/);
+refuseApi({ SUPABASE_URL: stagingUrl, SUPABASE_SERVICE_ROLE_KEY: "k", STAGING_PROJECT_REF: PRODUCTION_REF }, /production/);
+refuseApi({ SUPABASE_URL: stagingUrl }, /must be set/);
+refuseApi({ SUPABASE_SERVICE_ROLE_KEY: "k" }, /must be set/);
+refuseApi({ SUPABASE_URL: stagingUrl, SUPABASE_SERVICE_ROLE_KEY: "k" }, /on this machine/, { local: true });
+refuseApi({ SUPABASE_URL: "https://db.example.com", SUPABASE_SERVICE_ROLE_KEY: "k" }, /on this machine/, { local: true });
+refuseApi({ SUPABASE_URL: "http://127.0.0.1:54321", SUPABASE_SERVICE_ROLE_KEY: jwtKey(PRODUCTION_REF) }, /production/, { local: true });
 
 console.log("target guard ok");
