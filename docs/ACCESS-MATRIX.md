@@ -118,3 +118,12 @@ Code: `api/_lib/access.js`. Tests: `api/_lib/access.check.js`.
 | 7 | `api/reports/submit.js` skips Turnstile when the secret is unset (fails open) | Open: separate small PR |
 | 8 | `/api/cloudinary-signature` has no Turnstile | Open |
 | 9 | Whether the edge functions are deployed with JWT verification on | Cannot be seen from the repo; check the Supabase dashboard |
+
+## 7. T5: the admin dashboard needed no allowlist additions
+
+Every request the dashboard sends (tiles, reports page, report drawer, wards, municipalities, audit log, hidden tab, status, ward and note updates) is already allowed by sections 2 to 4. `api/_lib/dashboard.check.js` builds each request shape for both roles and checks it against `authorize()`, so a change to the query builders that needs a wider allowlist fails `npm test`.
+
+- A municipality admin's update body is limited to status, ward, note and the fields the status rules add (cleaned by, invalid reason). The status trigger and `audit_log` still apply.
+- The audit log gained one action, `note_change`, written when only `admin_note` changes (migration `t5_audit_note_changes`; apply it before deploying the code).
+- The drawer shows the after photo from the public view, not from `cleanup_proofs`, which stays denied to municipality admins.
+- Nothing in the dashboard sends DELETE, and no map, GPS or contact details are requested for a municipality admin.

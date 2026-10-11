@@ -1,27 +1,4 @@
-import { test as base, expect } from "@playwright/test";
-
-// Smoke tests only read. Every non-GET request is aborted in the browser, so nothing
-// can submit a report, a cleanup proof, a login, or trigger an authority email.
-// The Vercel bypass secret is sent only to the target host, never to third parties.
-const BYPASS = process.env.VERCEL_AUTOMATION_BYPASS_SECRET || "";
-const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-
-const test = base.extend({
-  context: async ({ context, baseURL }, use) => {
-    const host = new URL(baseURL).host;
-    await context.route("**/*", route => {
-      const request = route.request();
-      if (!READ_METHODS.has(request.method())) return route.abort();
-      if (BYPASS && new URL(request.url()).host === host) {
-        return route.continue({ headers: { ...request.headers(), "x-vercel-protection-bypass": BYPASS } });
-      }
-      return route.continue();
-    });
-    await use(context);
-  },
-});
-
-const bypassHeaders = BYPASS ? { "x-vercel-protection-bypass": BYPASS } : {};
+import { bypassHeaders, expect, test } from "./fixtures.js";
 
 test("write guard blocks POST requests", async ({ page }) => {
   await page.goto("/");
