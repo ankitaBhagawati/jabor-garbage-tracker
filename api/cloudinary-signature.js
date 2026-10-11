@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
-import { HttpError, rateLimit, route } from "./_lib/server.js";
+import { cloudinaryFolder, rateLimit, route } from "./_lib/server.js";
 
-const ALLOWED_FOLDERS = new Set(["jabor/reports", "jabor/cleanup-proofs"]);
 const ALLOWED_FORMATS = "jpg,jpeg,png,webp";
 
 function signParams(params, apiSecret) {
@@ -24,10 +23,10 @@ export default route("POST", async (req, res) => {
     throw new Error("Cloudinary signed uploads are not configured.");
   }
 
-  const folder = typeof req.body?.folder === "string" ? req.body.folder : "";
-  if (!ALLOWED_FOLDERS.has(folder)) {
-    throw new HttpError(400, "Upload folder is not allowed.");
-  }
+  // The client names the kind of upload ("reports" or "cleanup-proofs"). Older cached clients send
+  // "jabor/reports"; only the last segment is used, so the folder prefix always comes from the server.
+  const requested = typeof req.body?.folder === "string" ? req.body.folder : "";
+  const folder = cloudinaryFolder(requested.split("/").pop());
 
   const timestamp = Math.floor(Date.now() / 1000);
   const signedParams = {

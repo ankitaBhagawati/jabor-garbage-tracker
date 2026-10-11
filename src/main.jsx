@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { initSentry, reportError } from "./utils/sentry.js";
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -9,6 +10,10 @@ class ErrorBoundary extends React.Component {
 
   static getDerivedStateFromError(error) {
     return { error };
+  }
+
+  componentDidCatch(error) {
+    reportError(error);
   }
 
   render() {
@@ -51,6 +56,7 @@ async function boot() {
       </React.StrictMode>
     );
   } catch (error) {
+    reportError(error);
     root.render(
       <div style={{ padding: 24, fontFamily: "sans-serif" }}>
         <h1 style={{ fontSize: 20, marginBottom: 8 }}>Jabor could not start</h1>
@@ -63,5 +69,5 @@ async function boot() {
   }
 }
 
-boot();
+boot().then(initSentry).catch(() => { /* monitoring is optional */ });
 registerServiceWorker();

@@ -4,7 +4,8 @@ import { getAdminToken } from "../_lib/admin.js";
 // Forwards admin calls to Supabase with the token from the HttpOnly cookie.
 // Grants nothing extra: RLS and the edge functions' requireAdmin still decide access.
 const ALLOWED_PATH = /^\/(rest\/v1\/[a-z_]+(\?[^#]*)?|functions\/v1\/jabor-(recommendations|execute|embed))$/;
-const ALLOWED_METHODS = new Set(["GET", "POST", "PATCH", "DELETE"]);
+// No DELETE: admins hide reports (soft) and can restore them; nothing is removed for good.
+const ALLOWED_METHODS = new Set(["GET", "POST", "PATCH"]);
 
 export default route("POST", async (req, res) => {
   const { path, method = "GET", prefer, body } = req.body || {};

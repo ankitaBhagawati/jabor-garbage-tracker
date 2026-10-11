@@ -1,0 +1,46 @@
+# Read-only Playwright smoke tests against staging.jabor.in, after Vercel finishes
+# deploying the current head of the staging branch. Can also be started by hand.
+name: Staging smoke tests
+
+on:
+  deployment_status:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: read
+
+jobs:
+  smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       !contains(github.event.deployment.environment, 'Production'))
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BASE_URL: https://staging.jabor.in
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+    steps:
+      - name: Only for deployments of the current staging head
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          head=$(gh api "repos/${{ github.repository }}/branches/staging" --jq .commit.sha)
+          if [ "$head" = "${{ github.event.deployment.sha }}" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; fi
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - if: steps.gate.outputs.run == 'true'
+        run: npm ci && npx playwright install --with-deps chromium
+
+      - if: steps.gate.outputs.run == 'true'
+        run: npx playwright test

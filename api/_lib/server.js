@@ -1,4 +1,5 @@
 // Shared helpers for the Vercel functions in api/. Files under api/_lib are not routes.
+import { captureError } from "./sentry.js";
 
 export const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
 export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
@@ -24,7 +25,10 @@ export function route(method, handler) {
       return await handler(req, res);
     } catch (e) {
       const status = e instanceof HttpError ? e.status : 500;
-      if (status === 500) console.error(e);
+      if (status === 500) {
+        console.error(e);
+        await captureError(e);
+      }
       return res.status(status).json({ error: status === 500 ? "Server error." : e.message });
     }
   };
@@ -123,6 +127,18 @@ export function cleanText(value, max, { required = false, label = "Field" } = {}
   if (required && !text) throw new HttpError(400, `${label} is required.`);
   if (text.length > max) throw new HttpError(400, `${label} is too long.`);
   return text;
+}
+
+// Uploads go to <prefix>/reports and <prefix>/cleanup-proofs. The prefix comes from the server's
+// env so each environment writes to its own folders; the browser never chooses it.
+// Default "jabor" (production). Staging sets CLOUDINARY_FOLDER_PREFIX=jabor-staging.
+const UPLOAD_KINDS = new Set(["reports", "cleanup-proofs"]);
+
+export function cloudinaryFolder(kind) {
+  const prefix = (process.env.CLOUDINARY_FOLDER_PREFIX || "jabor").trim();
+  if (!/^[\w-]+(\/[\w-]+)*$/.test(prefix)) throw new Error("CLOUDINARY_FOLDER_PREFIX is not a valid folder path.");
+  if (!UPLOAD_KINDS.has(kind)) throw new HttpError(400, "Upload folder is not allowed.");
+  return `${prefix}/${kind}`;
 }
 
 // Only accept images uploaded to our own Cloudinary account and folder.

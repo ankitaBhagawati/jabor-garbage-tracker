@@ -1,0 +1,30 @@
+# Builds every migration on a throwaway local database and runs the pgTAP tests.
+# Uses no secrets and never connects to staging or production.
+name: Database tests
+
+on:
+  pull_request:
+    branches: [staging, main]
+    paths: ["supabase/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  pgtap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.111.0
+
+      - name: Start a local database (auth and REST only)
+        run: supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,realtime,storage-api,supavisor,postgres-meta
+
+      - name: Rebuild from migrations
+        run: supabase db reset --local
+
+      - name: pgTAP
+        run: supabase test db

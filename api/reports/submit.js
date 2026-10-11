@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
+import { captureError } from "../_lib/sentry.js";
 
 // Server-side chokepoint for public report submissions. The frontend no longer
 // inserts into Supabase directly; every report passes through rate limiting,
@@ -64,7 +65,9 @@ async function verifyTurnstile(token, ip) {
   });
   const data = await res.json().catch(() => null);
   if (!data?.success) {
-    return { ok: false, reason: (data?.["error-codes"] || []).join(",") || "verification-failed" };
+    // hostname is the site the token was issued for; a mismatch points at the wrong widget.
+    const codes = (data?.["error-codes"] || []).join(",") || "verification-failed";
+    return { ok: false, reason: data?.hostname ? `${codes} hostname=${data.hostname}` : codes };
   }
   return { ok: true };
 }
@@ -197,7 +200,17 @@ async function insertReport(report) {
   return { status: 200 };
 }
 
-export default async function handler(req, res) {
+// Unexpected crashes still return 500 through Vercel, but are reported to Sentry first.
+export default async function reportedHandler(req, res) {
+  try {
+    return await handler(req, res);
+  } catch (error) {
+    await captureError(error);
+    throw error;
+  }
+}
+
+async function handler(req, res) {
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed." });
@@ -232,7 +245,12 @@ export default async function handler(req, res) {
 
   const turnstile = await verifyTurnstile(req.body?.turnstileToken, ip);
   if (!turnstile.ok) {
+    // The reason (Cloudflare's error codes) stays in the server log and is never sent to the client.
     console.log(`[jabor] turnstile rejected report submission (ip=${ip}, reason=${turnstile.reason})`);
+    if (turnstile.reason === "missing-token") {
+      console.warn("[jabor] the browser sent no Turnstile token: the client bundle was most likely built without VITE_TURNSTILE_SITE_KEY");
+      return res.status(400).json({ error: "The security check did not run. Please refresh the page and try again." });
+    }
     return res.status(400).json({ error: "Bot verification failed. Please refresh the page and try again." });
   }
 

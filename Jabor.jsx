@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useRef } from "react";
+import { lazy, Suspense, useCallback, useState, useEffect, useRef } from "react";
 import "./style.css";
 import SupportJaborSection, { RazorpayPaymentButton } from "./SupportJaborSection";
 import {
@@ -34,6 +34,9 @@ import {
 
 const H        = { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` };
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || "";
+// A deployed build without a site key cannot pass the server's bot check, so say so up front.
+const TURNSTILE_MISSING = !TURNSTILE_SITE_KEY && import.meta.env.PROD;
+const TURNSTILE_MISSING_MESSAGE = "The security check is not configured on this site, so this cannot be submitted right now.";
 const LOGO     = "/jabor-logo-green-removebg-preview.png";
 const GA_MEASUREMENT_ID = "G-X5MPQVHB44";
 // mpLabel: "Gaurav Gogoi (Jorhat)" - MP name with their Lok Sabha seat
@@ -111,7 +114,7 @@ const db = {
   },
   async uploadPhoto(file) {
     // Supabase stores only the Cloudinary secure URL returned by this upload.
-    return uploadImageToCloudinary(file, "jabor/reports");
+    return uploadImageToCloudinary(file, "reports");
   },
 };
 
@@ -224,6 +227,9 @@ function TurnstileWidget({ onToken, controlRef }) {
     };
   }, [onToken, controlRef, retryTick]);
 
+  if (TURNSTILE_MISSING) {
+    return <p role="alert" style={{ textAlign: "center", fontSize: 12, color: "#B42318", margin: "0 0 14px" }}>⚠️ {TURNSTILE_MISSING_MESSAGE}</p>;
+  }
   if (!TURNSTILE_SITE_KEY) return null;
   return (
     <div style={{ marginBottom: 14 }}>
@@ -1273,6 +1279,9 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
   );
 }
 
+// Loaded only when an admin opens the Hidden tab, so the public bundle does not grow.
+const HiddenReports = lazy(() => import("./src/admin/HiddenReports.tsx"));
+
 function AdminDashboard({ onChanged }) {
   const [isAdmin, setIsAdmin] = useState(null);
   const [section, setSection] = useState("reports");
@@ -1298,6 +1307,7 @@ function AdminDashboard({ onChanged }) {
         {[
           { id: "reports", label: "Reports" },
           { id: "cleanup", label: "Cleanup Verification" },
+          { id: "hidden", label: "Hidden" },
         ].map(tab => (
           <button key={tab.id} className={`admin-tab ${section === tab.id ? "on" : ""}`} onClick={() => setSection(tab.id)}>
             {tab.label}
@@ -1305,9 +1315,13 @@ function AdminDashboard({ onChanged }) {
         ))}
       </div>
       <div className="card" style={{ marginBottom: 16 }}>
-        {section === "reports"
-          ? <ReportsManagementView onChanged={onChanged} onPhotoClick={setPhotoPreview} />
-          : <CleanupVerificationQueue onChanged={onChanged} onPhotoClick={setPhotoPreview} />}
+        {section === "reports" && <ReportsManagementView onChanged={onChanged} onPhotoClick={setPhotoPreview} />}
+        {section === "cleanup" && <CleanupVerificationQueue onChanged={onChanged} onPhotoClick={setPhotoPreview} />}
+        {section === "hidden" && (
+          <Suspense fallback={<Spinner />}>
+            <HiddenReports onChanged={onChanged} onPhotoClick={setPhotoPreview} />
+          </Suspense>
+        )}
       </div>
       {photoPreview && (
         <div className="admin-photo-modal" onClick={() => setPhotoPreview("")}>
@@ -1365,7 +1379,8 @@ export default function Jabor() {
     const originalPushState = window.history.pushState;
     const originalReplaceState = window.history.replaceState;
 
-    initGA(GA_MEASUREMENT_ID);
+    // Staging traffic must not mix into production analytics.
+    if (import.meta.env.APP_ENV !== "staging") initGA(GA_MEASUREMENT_ID);
     sendPageView();
 
     window.history.pushState = function pushState(...args) {
@@ -1543,6 +1558,7 @@ export default function Jabor() {
     if (wantsContact && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       alert("Please enter a valid email, or choose to report anonymously."); return;
     }
+    if (TURNSTILE_MISSING) { alert(TURNSTILE_MISSING_MESSAGE); return; }
     if (TURNSTILE_SITE_KEY && !turnstileToken) {
       alert("Please wait for the security check above the submit button to finish, then try again."); return;
     }
