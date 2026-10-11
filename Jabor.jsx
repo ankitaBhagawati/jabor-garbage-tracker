@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useState, useEffect, useRef } from "react";
 import "./style.css";
 import SupportJaborSection, { RazorpayPaymentButton } from "./SupportJaborSection";
+import MunicipalityQuestion from "./src/report/MunicipalityQuestion.tsx";
+import { findMunicipality, loadMunicipalities, placementError, placementFields } from "./src/report/placement.ts";
 import {
   fetchActiveReports,
   fetchAdminReports,
@@ -1361,7 +1363,11 @@ export default function Jabor() {
     district: "", constituency: "", area: "", landmark: "",
     waste_type: "mixed", description: "", photo: null, photoPreview: null,
     anonymous: true, reporterName: "", reporterEmail: "",
+    muniAnswer: "", wardChoice: "",
   });
+  // Municipalities that ask the municipal-area question (null while loading). A failed load leaves
+  // an empty list; the server then asks for the answer itself if the location needs one.
+  const [municipalities, setMunicipalities] = useState(null);
   const fileRef = useRef();
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef(null);
@@ -1541,6 +1547,15 @@ export default function Jabor() {
     }, 60);
   };
 
+  useEffect(() => {
+    if (view !== "report" || municipalities !== null) return;
+    loadMunicipalities()
+      .then(setMunicipalities)
+      .catch(error => { console.warn("[Jabor] municipal area question unavailable", error); setMunicipalities([]); });
+  }, [view, municipalities]);
+
+  const askedMunicipality = municipalities ? findMunicipality(municipalities, form.district, form.constituency) : null;
+
   const onSubmit = async () => {
     if (!navigator.onLine) {
       alert("You are offline. Please reconnect to submit the report.");
@@ -1553,6 +1568,9 @@ export default function Jabor() {
       alert("Please add a photo of the garbage dump."); return;
     }
     if (!preview) { alert("Area details are still loading - please wait."); return; }
+    if (municipalities === null) { alert("Area details are still loading - please wait."); return; }
+    const placementProblem = placementError(askedMunicipality, form.muniAnswer, form.wardChoice);
+    if (placementProblem) { alert(placementProblem); return; }
     const email = form.reporterEmail.trim();
     const wantsContact = !form.anonymous && email;
     if (wantsContact && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
@@ -1577,6 +1595,7 @@ export default function Jabor() {
       // The server stores the contact and sends the confirmation email (jabor-notify is server-only).
       await db.submitReport({
         ...payload,
+        ...placementFields(askedMunicipality, form.muniAnswer, form.wardChoice),
         reporter_name: wantsContact ? form.reporterName.trim() : "",
         reporter_email: wantsContact ? email : "",
       }, turnstileToken);
@@ -1593,7 +1612,7 @@ export default function Jabor() {
       setReports(prev => withPreservedReport(prev, localReport));
       await loadPublicReports(feedFilters, localReport);
       setPreview(null);
-      setForm({ district: "", constituency: "", area: "", landmark: "", waste_type: "mixed", description: "", photo: null, photoPreview: null, anonymous: true, reporterName: "", reporterEmail: "" });
+      setForm({ district: "", constituency: "", area: "", landmark: "", waste_type: "mixed", description: "", photo: null, photoPreview: null, anonymous: true, reporterName: "", reporterEmail: "", muniAnswer: "", wardChoice: "" });
       setTurnstileToken("");
       setSubmitted(true);
     } catch (e) {
@@ -2152,7 +2171,7 @@ export default function Jabor() {
                 <label className="lbl">DISTRICT <span style={{ color: "#10B981" }}>*</span></label>
                 {loadingMlas
                   ? <div style={{ color: "#3C4A42", fontSize: 13, padding: "8px 0" }}>Loading districts…</div>
-                  : <select className="inp" value={form.district} onChange={e => setForm(f => ({ ...f, district: e.target.value, constituency: "", area: "", landmark: "" }))}>
+                  : <select className="inp" value={form.district} onChange={e => setForm(f => ({ ...f, district: e.target.value, constituency: "", area: "", landmark: "", muniAnswer: "", wardChoice: "" }))}>
                       <option value="">Select district</option>
                       {districts.map(d => <option key={d} value={d}>{d}</option>)}
                     </select>}
@@ -2160,11 +2179,20 @@ export default function Jabor() {
               {form.district && (
                 <div style={{ marginBottom: 12 }}>
                   <label className="lbl">CONSTITUENCY <span style={{ color: "#10B981" }}>*</span></label>
-                  <select className="inp" value={form.constituency} onChange={e => setForm(f => ({ ...f, constituency: e.target.value, area: "", landmark: "" }))}>
+                  <select className="inp" value={form.constituency} onChange={e => setForm(f => ({ ...f, constituency: e.target.value, area: "", landmark: "", muniAnswer: "", wardChoice: "" }))}>
                     <option value="">Select constituency</option>
                     {consForDist.map(c => <option key={c.id} value={c.constituency}>{c.constituency}  </option>)}
                   </select>
                 </div>
+              )}
+              {askedMunicipality && (
+                <MunicipalityQuestion
+                  municipality={askedMunicipality}
+                  answer={form.muniAnswer}
+                  wardChoice={form.wardChoice}
+                  onAnswer={muniAnswer => setForm(f => ({ ...f, muniAnswer, wardChoice: "" }))}
+                  onWard={wardChoice => setForm(f => ({ ...f, wardChoice }))}
+                />
               )}
               {form.constituency && (
                 <>

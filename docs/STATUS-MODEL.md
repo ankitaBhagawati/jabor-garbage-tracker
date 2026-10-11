@@ -23,6 +23,9 @@ New reports are still stored as `verified` (the column default). Existing values
 - **Staff** (`reports` table, authenticated): a municipality admin sees reports whose `municipality_id` is
   theirs. A super admin sees everything. Both need an active `staff_profiles` row; the JWT alone is not enough.
   Role `admin` is treated as super admin until every account is migrated.
+- Anon can read only these `reports` columns: the ones the live frontend selects (see
+  `docs/PUBLIC-FORM.md`). Ward, municipality, the reporter's municipal-area answer, `source`, notes and
+  the embedding are not readable by anon.
 - `cleanup_proofs` follow their report: staff see and update a proof when they may see its report.
 
 ## Transitions (enforced for staff by a trigger)
