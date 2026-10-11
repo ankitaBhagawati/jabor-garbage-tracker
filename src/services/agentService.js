@@ -1,6 +1,6 @@
 import { adminRestJson } from "./supabaseRest.js";
 
-// Edge functions still run requireAdmin; the proxy only supplies the cookie's token.
+// Edge functions check for an active super admin themselves; the proxy only supplies the cookie's token.
 function callFunction(name, body) {
   return adminRestJson(`/functions/v1/${name}`, { method: "POST", body: body || {} });
 }

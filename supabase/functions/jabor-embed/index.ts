@@ -2,7 +2,7 @@
 // reports so vector similarity search has a candidate pool. Safe to re-run; it
 // only processes reports whose embedding is still null. Call repeatedly until
 // { remaining: 0 }.
-import { corsHeaders, embedText, json, requireAdmin } from "../_shared/auth.ts";
+import { corsHeaders, embedText, json, requireSuperAdmin } from "../_shared/auth.ts";
 import { reportToText, type ReportRow } from "../_shared/reasoning.ts";
 
 const BATCH_SIZE = 25;
@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
 
   let ctx;
   try {
-    ctx = await requireAdmin(req);
+    ctx = await requireSuperAdmin(req);
   } catch (res) {
     return res instanceof Response ? res : json({ error: "Authorization failed." }, 500);
   }

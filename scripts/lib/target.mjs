@@ -101,3 +101,37 @@ export function printTable(rows, headers) {
   console.log(widths.map(w => "-".repeat(w)).join("  "));
   rows.forEach(r => console.log(line(r)));
 }
+
+// ── The Supabase API (admin users and REST with the service role key) ─────────
+// The project ref inside a legacy service role key (a JWT) is checked too, so a production key cannot be
+// paired with a staging URL by mistake. Newer sb_secret_ keys carry no ref and cannot be checked this way.
+function keyRef(key) {
+  const parts = key.split(".");
+  if (parts.length !== 3) return null;
+  try { return JSON.parse(Buffer.from(parts[1], "base64url").toString()).ref ?? null; } catch { return null; }
+}
+
+// Returns { kind, url, serviceKey, confirm } for the staging project or, with local, this machine's stack.
+export function resolveApiTarget({ local = false, env = process.env } = {}) {
+  const watched = ["SUPABASE_URL", "VITE_SUPABASE_URL", "STAGING_PROJECT_REF", "STAGING_DB_URL"];
+  for (const name of watched) {
+    if ((env[name] || "").includes(PRODUCTION_REF)) throw new Error(`${name} points at the production project. These scripts never run against production.`);
+  }
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const urlText = env.SUPABASE_URL || env.VITE_SUPABASE_URL || "";
+  if (!urlText || !serviceKey) throw new Error("SUPABASE_URL (or VITE_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY must be set for the project you are targeting.");
+  const url = new URL(urlText);
+  const ref = keyRef(serviceKey);
+  if (ref === PRODUCTION_REF) throw new Error("SUPABASE_SERVICE_ROLE_KEY belongs to the production project. These scripts never run against production.");
+
+  if (local) {
+    if (!["127.0.0.1", "localhost"].includes(url.hostname)) throw new Error("--local only works with a Supabase stack on this machine.");
+    return { kind: "local", label: "the LOCAL Supabase stack", url: url.origin, serviceKey, confirm: "local" };
+  }
+  if (!url.hostname.endsWith(".supabase.co") || url.hostname.split(".")[0] !== STAGING_REF) {
+    throw new Error(`The Supabase URL is not the staging project (${STAGING_REF}). Refusing to run.`);
+  }
+  if (ref && ref !== STAGING_REF) throw new Error("SUPABASE_SERVICE_ROLE_KEY belongs to a different project than the staging URL. Refusing to run.");
+  if (env.STAGING_PROJECT_REF && env.STAGING_PROJECT_REF !== STAGING_REF) throw new Error("STAGING_PROJECT_REF is not the staging project. Refusing to run.");
+  return { kind: "staging", label: `the STAGING project (${STAGING_REF})`, url: url.origin, serviceKey, confirm: STAGING_REF };
+}

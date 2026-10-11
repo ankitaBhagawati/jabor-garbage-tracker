@@ -1,12 +1,10 @@
 // Shared helpers for Jabor agent edge functions.
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isActiveSuperAdmin } from "./roles.ts";
 
-export const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { corsHeaders } from "./cors.ts";
+
+export { corsHeaders };
 
 export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -20,9 +18,12 @@ export interface AdminContext {
   service: SupabaseClient;
 }
 
-// Verifies the caller is a signed-in Jabor admin and returns a service-role
-// client for privileged DB work. Throws a Response on failure (caller returns it).
-export async function requireAdmin(req: Request): Promise<AdminContext> {
+// Verifies the caller is an active Jabor super admin and returns a service-role client for
+// privileged DB work. Throws a Response on failure (caller returns it). These functions act across
+// all municipalities with the service role, so a municipality admin is always refused (403).
+// The older JWT role "admin" counts as super admin; either way the user's staff_profiles row must
+// say super_admin and be active, so deactivating a profile ends access on the next call.
+export async function requireSuperAdmin(req: Request): Promise<AdminContext> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -42,13 +43,17 @@ export async function requireAdmin(req: Request): Promise<AdminContext> {
 
   const role = (data.user.app_metadata as Record<string, unknown> | undefined)
     ?.role;
-  if (role !== "admin") {
-    throw json({ error: "Admin access required." }, 403);
-  }
-
   const service = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false },
   });
+  const { data: profile } = await service
+    .from("staff_profiles")
+    .select("role, is_active")
+    .eq("user_id", data.user.id)
+    .maybeSingle();
+  if (!isActiveSuperAdmin(role, profile)) {
+    throw json({ error: "Super admin access required." }, 403);
+  }
 
   return {
     admin: { id: data.user.id, email: data.user.email ?? null },

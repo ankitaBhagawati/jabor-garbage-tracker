@@ -763,8 +763,7 @@ function AdminLoginGate({ onUnlock }) {
     setLoading(true);
     setError("");
     try {
-      await signInAdmin(email.trim(), password);
-      onUnlock();
+      onUnlock(await signInAdmin(email.trim(), password));
     } catch (e) {
       setError(e.message || "Could not sign in.");
     } finally {
@@ -1283,18 +1282,29 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
 
 // Loaded only when an admin opens the Hidden tab, so the public bundle does not grow.
 const HiddenReports = lazy(() => import("./src/admin/HiddenReports.tsx"));
+const MunicipalityLanding = lazy(() => import("./src/admin/MunicipalityLanding.tsx"));
 
 function AdminDashboard({ onChanged }) {
-  const [isAdmin, setIsAdmin] = useState(null);
+  // null while checking, false when signed out, otherwise { email, role, municipality } from the server.
+  const [session, setSession] = useState(null);
   const [section, setSection] = useState("reports");
   const [photoPreview, setPhotoPreview] = useState("");
 
   useEffect(() => {
-    checkAdminSession().then(session => setIsAdmin(Boolean(session)));
+    checkAdminSession().then(found => setSession(found || false));
   }, []);
 
-  if (isAdmin === null) return <AdminEmpty icon="⏳" title="Checking admin session…" text="" />;
-  if (!isAdmin) return <AdminLoginGate onUnlock={() => setIsAdmin(true)} />;
+  const signOut = async () => { await signOutAdmin(); setSession(false); };
+
+  if (session === null) return <AdminEmpty icon="⏳" title="Checking admin session…" text="" />;
+  if (!session) return <AdminLoginGate onUnlock={setSession} />;
+  if (session.role === "municipality_admin") {
+    return (
+      <Suspense fallback={<Spinner />}>
+        <MunicipalityLanding session={session} onSignOut={signOut} />
+      </Suspense>
+    );
+  }
 
   return (
     <div className="slide-in" style={{ maxWidth: 1100, margin: "0 auto" }}>
@@ -1303,7 +1313,7 @@ function AdminDashboard({ onChanged }) {
         <h1 style={{ fontSize: 24, fontWeight: 900, letterSpacing: "-0.03em" }}>Admin</h1>
         <p style={{ color: "#3C4A42", fontSize: 13, marginTop: 4 }}>Moderate public reports, review cleanup proof replies, and keep public data trustworthy.</p>
         </div>
-        <button className="btn-s" onClick={async () => { await signOutAdmin(); setIsAdmin(false); }}>Sign Out</button>
+        <button className="btn-s" onClick={signOut}>Sign Out</button>
       </div>
       <div className="admin-tabs">
         {[

@@ -2,7 +2,7 @@
 // selected actions and executes them. X posting is live (OAuth 1.0a via
 // _shared/x.ts); authority email is live via Resend (needs RESEND_API_KEY +
 // EMAIL_FROM function secrets).
-import { corsHeaders, json, requireAdmin } from "../_shared/auth.ts";
+import { corsHeaders, json, requireSuperAdmin } from "../_shared/auth.ts";
 import { postToX } from "../_shared/x.ts";
 
 interface ExecuteBody {
@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
 
   let ctx;
   try {
-    ctx = await requireAdmin(req);
+    ctx = await requireSuperAdmin(req);
   } catch (res) {
     return res instanceof Response ? res : json({ error: "Authorization failed." }, 500);
   }

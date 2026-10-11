@@ -1,0 +1,120 @@
+# Access matrix
+
+Who can do what, and where it is enforced. Written for T3 (roles and server-side access control) and
+kept up to date with the code. Checked against `staging` and the staging database.
+
+Keys: **anon** is the public Supabase key (RLS as `anon`). **user JWT** is the signed-in admin's token from the
+HttpOnly cookie (RLS as `authenticated`). **service role** bypasses RLS and is only used on the server.
+
+## 1. Roles and how they are decided
+
+| Role | Who | Sees |
+|---|---|---|
+| `super_admin` | The owner. The older JWT role `admin` counts as `super_admin`. | Every municipality, the contact tables, the edge functions. |
+| `municipality_admin` | JMB staff. One municipality. | Their own municipality's reports, wards, audit log, and their own profile. Nothing else. |
+
+The role is decided on the server for every request, never from anything the browser sends:
+
+1. Supabase Auth verifies the access token (`/auth/v1/user`).
+2. The caller's own `staff_profiles` row is read with the caller's own token. RLS lets staff read only their own row,
+   and only while it is active.
+3. The signed role in the token (`app_metadata`, set only with the service role) and the profile must agree.
+   For a municipality admin the token's `municipality_id` must equal the profile's. The municipality used for
+   scoping comes from the profile.
+4. Nothing is cached. Setting `is_active = false` takes effect on the very next request, even with a valid token.
+
+Anything else (no profile, inactive, mismatched, an unknown role such as `authenticated`) is refused with 403 and the
+session cookies are cleared.
+
+## 2. The admin proxy `POST /api/admin/rest`
+
+Default is deny. Allowed requests are rebuilt from validated parts, so Supabase receives exactly what was checked.
+Code: `api/_lib/access.js`. Tests: `api/_lib/access.check.js`.
+
+### Role x table x operation
+
+`S` select, `U` update by id. No role may insert or delete through the proxy. `-` means denied (403).
+
+| Table | super_admin | municipality_admin | Municipality scope added by the server |
+|---|---|---|---|
+| `reports` | S, U | S, U | `municipality_id = own` |
+| `cleanup_proofs` | S, U | - | (not available to municipality admins yet) |
+| `report_contacts` | S | - | |
+| `audit_log` | S | S | `municipality_id = own` |
+| `wards` | S | S | `municipality_id = own` |
+| `ward_localities` | S | - | (not available to municipality admins yet) |
+| `municipalities` | S | S | `id = own` |
+| `staff_profiles` | S | S | `user_id = self` |
+| `authority_contacts`, `escalation_guidelines`, `recommendations_audit` | - | - | Edge functions read these with the service role |
+| anything else (`mla_list`, `mp_list`, `constituencies`, `report_activity`, RPCs, other schemas) | - | - | |
+
+### Edge functions through the proxy
+
+| Function | super_admin | municipality_admin |
+|---|---|---|
+| `jabor-recommendations`, `jabor-execute`, `jabor-embed` | POST | - |
+| `jabor-notify` | - (not reachable through the proxy) | - |
+
+### What a request may contain
+
+- **Path:** exactly `/rest/v1/<table>` or `/functions/v1/<function>`. No sub-paths, no `rpc`, no encoded tricks, no query on functions.
+- **Query keys:** only `select`, `order`, `limit`, `offset`, `or`, `and`, and the filter columns listed for that role and table. Anything else is refused.
+  A key may appear once. A municipality admin may never send the scope key (`municipality_id`, `id` on municipalities, `user_id` on staff profiles); the server adds it.
+- **`or=` and `and=`:** every column used anywhere inside, however nested, must be one the role may filter by. So `or=(municipality_id.eq.x,...)` is refused for a municipality admin.
+- **Filters:** `col=op.value` with operators `eq neq gt gte lt lte in is like ilike`, optionally `not.`, on allowed columns only.
+- **`select`:** explicit columns the role may read. `*` only on `cleanup_proofs`. No `embedding`. Embedded tables only where listed (`cleanup_proofs` embeds `reports` for a super admin); `reports?select=*,report_contacts(*)` is refused for everyone.
+- **`order`:** up to 3 allowed columns. **`limit`:** 1 to 1000 (1000 is added when absent). **`offset`:** a number.
+- **`Prefer`:** one of `return=minimal`, `return=representation`, `count=exact`. Nothing else (no upsert, rollback or missing=default). `Range` and every other client header are never forwarded.
+- **Body envelope:** only `path`, `method`, `prefer`, `body`. A `role` or `municipality_id` key is refused.
+- **Updates (PATCH):** one row, with `id=eq.<uuid>` as the only filter. Allowed body keys:
+  - super_admin on `reports`: `status`, `is_deleted`, `ward_id`, `assigned_to_text`, `due_at`, `cleaned_by_name`, `cleaned_by_type`, `cleaned_at`, `invalid_reason`, `admin_note`, `updated_at`
+  - municipality_admin on `reports`: `status`, `ward_id`, `admin_note`, plus `invalid_reason`, `cleaned_by_name`, `cleaned_by_type`, `cleaned_at`, which the status trigger requires with Invalid and Cleaned
+  - super_admin on `cleanup_proofs`: `status` (approved or rejected), `admin_notes`, `updated_at`
+  - Statuses are `active`, `in_progress`, `cleaned`, `invalid`; `cleaned_by_type` is `jmb`, `citizen` or `other` (never `auto`). The database trigger still enforces the transition rules and writes `audit_log`.
+- **Errors:** denials return `403 {"error":"Not allowed."}` and are logged with user id, role, route and a reason code, never the query or body. Database errors keep `code` and `message` only.
+
+## 3. Edge functions
+
+| Function | Credential checked inside | Notes |
+|---|---|---|
+| `jabor-recommendations`, `jabor-execute`, `jabor-embed` | `requireSuperAdmin`: a valid user token whose role is `admin` or `super_admin` **and** an active `staff_profiles` row with role `super_admin`, read with the service role on every call. A municipality admin gets 403. | They run with the service role across all municipalities. `jabor-execute` posts to X and emails real authorities: never run it on staging while staging holds real contacts. |
+| `jabor-notify` | The shared secret in `x-jabor-notify-secret`, compared in constant time, failing closed when the secret is not set. A user JWT of any role is not a credential. | Called only by `api/reports/submit.js`. |
+
+## 4. Endpoints in `api/`
+
+| Route | Method | Tables touched | Key | Who may call it |
+|---|---|---|---|---|
+| `/api/reports/submit` | POST | `reports` (insert), `municipalities`, `wards`, `mla_list`, `mp_list`; calls `jabor-notify` | service role; anon for the notify call | Anyone. Upstash limit, Turnstile, validation. |
+| `/api/cleanup-proofs` | POST | `reports` (read), `cleanup_proofs` (insert) | service role | Anyone. Limit, Turnstile (required). |
+| `/api/municipalities` | GET | `municipalities`, `wards`, `ward_localities` (read) | service role | Anyone. Reference data for the report form only. |
+| `/api/cloudinary-signature` | POST | none | Cloudinary secret | Anyone. Rate limited. |
+| `/api/health` | GET | `mla_list` (read) | anon | Anyone. |
+| `/api/admin/login` | POST | Supabase Auth, `staff_profiles` (own row) | anon, then the user's token | Anyone with credentials, rate limited. Accepts only active staff. |
+| `/api/admin/session` | GET | Supabase Auth, `staff_profiles` (own row) | user JWT | Active staff. Returns email, role, municipality. |
+| `/api/admin/logout` | POST | Supabase Auth | user JWT | Anyone. |
+| `/api/admin/rest` | POST | per section 2 | user JWT | Active staff, per role. |
+
+## 5. Database (RLS), the second layer
+
+| Table | Who can read | Who can write |
+|---|---|---|
+| `reports` | staff of the municipality (super admin: all); anon only the public columns and public rows | staff update only (trigger limits columns and transitions); no client insert or delete |
+| `cleanup_proofs` | staff through their report; anon the approved ones, five columns | staff update |
+| `wards`, `ward_localities`, `municipalities`, `audit_log`, `staff_profiles` | staff of the municipality; super admin all; `staff_profiles` own row only | nobody from the client |
+| `report_contacts`, `authority_contacts`, `escalation_guidelines`, `recommendations_audit` | active super admin only (`private.is_super_admin()`) | `recommendations_audit`: active super admin; others none |
+
+`private.is_super_admin()` needs an active `staff_profiles` row, so deactivation also ends access here.
+
+## 6. Findings from the T3 inventory
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | The proxy had no role check and no allowlist | Fixed: per-role allowlist, section 2 |
+| 2 | Embedded tables were not inspected | Fixed: `select` is parsed; embeds only where listed |
+| 3 | Deactivation did not reach the four agent tables or the edge functions | Fixed: policies use the helpers (migration `t3_staff_policies_is_active`); `requireSuperAdmin` reads the profile |
+| 4 | Login and session ignored `staff_profiles` | Fixed: both resolve the staff member per request |
+| 5 | `jabor-execute` has real-world side effects | Unchanged by design: super admin only; do not run on staging until contacts are replaced |
+| 6 | `jabor-notify` cannot take a user role check | Kept on the shared secret, now constant time, with tests for user JWTs |
+| 7 | `api/reports/submit.js` skips Turnstile when the secret is unset (fails open) | Open: separate small PR |
+| 8 | `/api/cloudinary-signature` has no Turnstile | Open |
+| 9 | Whether the edge functions are deployed with JWT verification on | Cannot be seen from the repo; check the Supabase dashboard |

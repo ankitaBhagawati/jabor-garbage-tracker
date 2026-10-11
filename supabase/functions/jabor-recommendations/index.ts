@@ -1,7 +1,7 @@
 // jabor-recommendations — the agentic RAG pipeline.
 // Retrieval (gte-small + pgvector) -> agent reasoning -> Claude caption (RAG
 // generation) -> audit row -> structured recommendations for admin review.
-import { type AdminContext, corsHeaders, embedText, json, requireAdmin } from "../_shared/auth.ts";
+import { type AdminContext, corsHeaders, embedText, json, requireSuperAdmin } from "../_shared/auth.ts";
 import {
   assembleCaption,
   buildActions,
@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
 
   let ctx;
   try {
-    ctx = await requireAdmin(req);
+    ctx = await requireSuperAdmin(req);
   } catch (res) {
     return res instanceof Response ? res : json({ error: "Authorization failed." }, 500);
   }
