@@ -438,7 +438,8 @@ test.describe("municipality admin", () => {
     await expect(pager).toContainText(`of ${total}`);
     await page.getByRole("button", { name: "Next" }).click();
     await expect(page.locator(".adm-page-of")).toHaveText(/Page 2 of/);
-    await rows.first().getByRole("button", { name: "Open report" }).click();
+    // only report rows can be opened (the log also holds exports and staff changes)
+    await rows.getByRole("button", { name: "Open report" }).first().click();
     await expect(page.getByRole("dialog").getByRole("heading", { level: 3, name: "History" })).toBeVisible();
   });
   test("the reports export sends only the filters and tells the person what happened", async ({ page, staff }) => {
