@@ -126,8 +126,10 @@ export const municipalitiesEnvelope = (): Envelope => ({ path: `/rest/v1/municip
 export type AuditFilters = { from: string; to: string; actor: string; action: string };
 export const EMPTY_AUDIT_FILTERS: AuditFilters = { from: "", to: "", actor: "", action: "" };
 
-export function auditPageEnvelope(scope: Scope, filters: AuditFilters, page: number): Envelope {
-  const pairs: [string, string][] = [["select", AUDIT_COLUMNS]];
+// The filters of the Audit log tab as query pairs. The list and the CSV export both use this one function, so the
+// file always holds exactly the rows the filtered list shows.
+export function auditFilterPairs(filters: AuditFilters): [string, string][] {
+  const pairs: [string, string][] = [];
   const dates: string[] = [];
   if (filters.from) dates.push(`created_at.gte.${dayStart(filters.from)}`);
   if (filters.to) dates.push(`created_at.lte.${dayEnd(filters.to)}`);
@@ -135,9 +137,22 @@ export function auditPageEnvelope(scope: Scope, filters: AuditFilters, page: num
   const actor = filters.actor.replace(/[*%\u0000-\u001f]/g, "").trim().slice(0, 80);
   if (actor) pairs.push(["actor_email", `ilike.*${actor}*`]);
   if (filters.action) pairs.push(["action", `eq.${filters.action}`]);
+  return pairs;
+}
+
+export const auditFiltersActive = (filters: AuditFilters) => auditFilterPairs(filters).length > 0;
+
+export function auditPageEnvelope(scope: Scope, filters: AuditFilters, page: number): Envelope {
+  const pairs: [string, string][] = [["select", AUDIT_COLUMNS], ...auditFilterPairs(filters)];
   pairs.push(["order", "created_at.desc,id.desc"], ["limit", String(PAGE_SIZE)], ["offset", String((Math.max(1, page) - 1) * PAGE_SIZE)]);
   return { path: `/rest/v1/audit_log?${query(scoped(scope, pairs))}`, method: "GET", prefer: "count=exact" };
 }
+
+// The audit log CSV export: only the filters leave the browser. The server picks the columns, the order and the cap.
+export const auditExportEnvelope = (scope: Scope, filters: AuditFilters): { type: "audit_log"; path: string } => ({
+  type: "audit_log",
+  path: `/rest/v1/audit_log?${query(scoped(scope, auditFilterPairs(filters)))}`,
+});
 
 // ── Hidden reports (the Hidden tab) ──────────────────────────────────────────
 export const hiddenEnvelope = (scope: Scope): Envelope => ({

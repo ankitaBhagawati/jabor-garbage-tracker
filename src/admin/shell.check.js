@@ -15,16 +15,17 @@ const MUNI = { role: "municipality_admin", userId: "aaaaaaaa-0000-4000-8000-0000
 const NOW = new Date("2026-10-11T12:00:00Z");
 
 // ── The sidebar ──────────────────────────────────────────────────────────────
-const order = ["dashboard", "reports", "hotspots", "monthly", "audit"];
-for (const role of ["super_admin", "municipality_admin"]) assert.deepEqual(N.navFor(role).map(i => i.id), order, `${role}: the pages, in order`);
-assert.deepEqual(N.navFor("super_admin").map(i => i.label), ["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log"]);
-assert.ok(!N.navFor("super_admin").some(i => /municipal admins/i.test(i.label)), "Municipal admins ships later");
+const order = ["dashboard", "reports", "hotspots", "monthly", "audit"]; // the pages every role has
+assert.deepEqual(N.navFor("municipality_admin").map(i => i.id), order, "a municipality admin: the pages, in order");
+assert.deepEqual(N.navFor("super_admin").map(i => i.id), [...order, "admins"], "a super admin also has Municipal admins, last");
+assert.deepEqual(N.navFor("super_admin").map(i => i.label), ["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log", "Municipal admins"]);
+assert.ok(!N.navFor("municipality_admin").some(i => /municipal admins/i.test(i.label)), "Municipal admins is for super admins only");
 const extra = [{ id: "cleanup", label: "Cleanup Verification" }];
-assert.deepEqual(N.navFor("super_admin", extra).map(i => i.id), [...order, "cleanup"], "the owner's older screens follow the pages");
-// a role-limited item shows only to that role (the place where Municipal admins will go)
-N.NAV.push({ id: "admins", label: "Municipal admins", icon: "audit", roles: ["super_admin"] });
-assert.ok(N.navFor("super_admin").some(i => i.id === "admins"));
-assert.ok(!N.navFor("municipality_admin").some(i => i.id === "admins"));
+assert.deepEqual(N.navFor("super_admin", extra).map(i => i.id), [...order, "admins", "cleanup"], "the owner's older screens follow the pages");
+// a role-limited item shows only to that role
+N.NAV.push({ id: "only-municipality", label: "X", icon: "audit", roles: ["municipality_admin"] });
+assert.ok(N.navFor("municipality_admin").some(i => i.id === "only-municipality"));
+assert.ok(!N.navFor("super_admin").some(i => i.id === "only-municipality"));
 N.NAV.pop();
 
 // ── The header ───────────────────────────────────────────────────────────────

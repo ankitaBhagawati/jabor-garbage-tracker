@@ -24,7 +24,7 @@ export const formatDateTime = (iso: string | null | undefined) => (iso ? DATE_TI
 export const ACTION_LABEL: Record<string, string> = {
   report_created: "Report received", status_change: "Status changed", ward_change: "Ward changed", assignment_change: "Assignment changed",
   cleaned_details_change: "Cleaned details changed", note_change: "Note changed", hidden: "Hidden", unhidden: "Restored",
-  export: "Export downloaded", staff_created: "Staff account created", staff_changed: "Staff account changed", staff_deleted: "Staff account removed",
+  export: "Export downloaded", staff_account_created: "Municipal admin added", staff_account_activated: "Municipal admin reactivated", staff_account_deactivated: "Municipal admin deactivated", staff_created: "Staff account created", staff_changed: "Staff account changed", staff_deleted: "Staff account removed",
 };
 
 export const actorLabel = (email: string) => (email === "public" ? "Public (citizen)" : email === "system" ? "System" : email);
@@ -51,6 +51,9 @@ export function describeAudit(row: Pick<AuditRow, "action" | "from_value" | "to_
     case "assignment_change": return to.assigned_to_text ? `Assigned to ${String(to.assigned_to_text)}.` : "Assignment cleared.";
     case "cleaned_details_change": return `Cleaned details changed${to.cleaned_by_name ? ` (${String(to.cleaned_by_name)})` : ""}.`;
     case "note_change": return to.admin_note ? "Internal note updated." : "Internal note cleared.";
+    case "staff_account_created": return `${to.email ? String(to.email) : "A municipal admin"} was added as a municipal admin.`;
+    case "staff_account_activated": return `${to.email ? String(to.email) : "A municipal admin"} was reactivated.`;
+    case "staff_account_deactivated": return `${to.email ? String(to.email) : "A municipal admin"} was deactivated and lost access at once.`;
     case "export": return `Downloaded a CSV of ${Number(to.rows ?? 0).toLocaleString("en-IN")} reports${to.filters ? " with filters" : ", no filters"}.`;
     case "hidden": return "Hidden from the public site.";
     case "unhidden": return "Restored to the public site.";

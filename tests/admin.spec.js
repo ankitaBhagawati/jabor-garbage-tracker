@@ -46,20 +46,56 @@ const test = base.extend({
   staff: [async ({ browser, baseURL, context, page }, use, testInfo) => {
     const writes = [];
     const exports = []; // CSV export requests: recorded and answered with a stub, so no audit row is written on the site under test
-    const exportReply = { status: 200 };
+    const exportReply = { status: 200, truncated: false, delay: 0 };
+    // The staff routes are answered here (reads too), so these tests do not need the staff API deployed and never create an account.
+    const staffApi = {
+      mode: "ok", calls: [],
+      list: [
+        { user_id: "aaaaaaaa-0000-4000-8000-000000000001", email: "owner@example.test", role: "super_admin", municipality_id: null, municipality_name: null, is_active: true, created_at: "2026-09-01T00:00:00Z" },
+        { user_id: "aaaaaaaa-0000-4000-8000-000000000002", email: "jmb@example.test", role: "municipality_admin", municipality_id: "m1", municipality_name: "Jorhat Municipal Board", is_active: true, created_at: "2026-10-03T00:00:00Z" },
+        { user_id: "aaaaaaaa-0000-4000-8000-000000000003", email: "former@example.test", role: "municipality_admin", municipality_id: "m1", municipality_name: "Jorhat Municipal Board", is_active: false, created_at: "2026-10-04T00:00:00Z" },
+      ],
+    };
     const account = testInfo.title.includes("[super]") ? SUPER : JMB;
     await addBypass(context, baseURL);
     // The guard: nothing but a GET, the sign-in and sign-out routes, and the proxy gets out.
     await context.route("**/*", route => (READ.has(route.request().method()) ? route.fallback() : route.abort()));
-    await page.route("**/api/admin/*", async route => {
+    await page.route("**/api/admin/**", async route => {
       const url = new URL(route.request().url());
       // continue() skips the context handler that adds the Vercel bypass header, so it is added here.
       const pass = () => route.continue({ headers: { ...route.request().headers(), ...bypassHeaders } });
+      const reply = (status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+      if (url.pathname === "/api/admin/staff" && route.request().method() === "GET") return reply(200, staffApi.list);
+      if (url.pathname === "/api/admin/staff" && route.request().method() === "POST") {
+        const body = JSON.parse(route.request().postData() || "{}");
+        staffApi.calls.push({ path: url.pathname, body });
+        if (staffApi.mode === "network") return route.abort();
+        const failures = { conflict: [409, { error: "An account with this email already exists. Nothing was changed." }], bad: [400, { error: "Enter a valid email address." }], limit: [429, { error: "Too many requests. Please try again later." }], forbidden: [403, { error: "Not allowed." }], raw: [500, { error: "duplicate key value violates unique constraint staff_profiles_pkey" }] };
+        if (failures[staffApi.mode]) return reply(...failures[staffApi.mode]);
+        const row = { user_id: "bbbbbbbb-0000-4000-8000-000000000001", email: body.email, role: "municipality_admin", municipality_id: body.municipality_id, municipality_name: "Jorhat Municipal Board", is_active: true, created_at: "2026-10-12T00:00:00Z" };
+        staffApi.list = [row, ...staffApi.list];
+        return reply(201, { user_id: row.user_id, email: row.email, role: row.role, municipality_id: row.municipality_id, municipality_name: row.municipality_name, is_active: true });
+      }
+      if (url.pathname === "/api/admin/staff/status" && route.request().method() === "POST") {
+        const body = JSON.parse(route.request().postData() || "{}");
+        staffApi.calls.push({ path: url.pathname, body });
+        staffApi.list = staffApi.list.map(r => (r.user_id === body.user_id ? { ...r, is_active: body.is_active } : r));
+        return reply(200, { user_id: body.user_id, is_active: body.is_active, changed: true });
+      }
       if (READ.has(route.request().method()) || url.pathname === "/api/admin/login" || url.pathname === "/api/admin/logout") return pass();
       if (url.pathname === "/api/admin/export" && route.request().method() === "POST") {
         exports.push(JSON.parse(route.request().postData() || "{}"));
+        if (exportReply.delay) await new Promise(resolve => setTimeout(resolve, exportReply.delay));
+        if (exportReply.status !== 200 && exportReply.status !== 413) return reply(exportReply.status, { error: "Server error." });
         if (exportReply.status === 413) return route.fulfill({ status: 413, contentType: "application/json", body: JSON.stringify({ error: "12,345 reports match. An export holds at most 10,000. Narrow the filters (a date range or a ward) and try again." }) });
-        return route.fulfill({ status: 200, contentType: "text/csv", headers: { "content-disposition": 'attachment; filename="jabor-reports-test.csv"', "x-row-count": "2" }, body: "id,date\r\nabc,2026-10-01\r\n" });
+        const audit = exports[exports.length - 1].type === "audit_log";
+        return route.fulfill({
+          status: 200, contentType: "text/csv",
+          headers: audit
+            ? { "content-disposition": 'attachment; filename="jabor-audit-log-test.csv"', "x-row-count": exportReply.truncated ? "10000" : "2", "x-total-rows": exportReply.truncated ? "12345" : "2", "x-truncated": String(exportReply.truncated) }
+            : { "content-disposition": 'attachment; filename="jabor-reports-test.csv"', "x-row-count": "2" },
+          body: "id,date\r\nabc,2026-10-01\r\n",
+        });
       }
       if (url.pathname !== "/api/admin/rest" || route.request().method() !== "POST") return route.abort();
       const envelope = JSON.parse(route.request().postData() || "{}");
@@ -69,7 +105,7 @@ const test = base.extend({
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id, ...envelope.body }]) });
     });
     await context.addCookies(await sessionFor(browser, baseURL, account));
-    await use({ account, writes, exports, exportReply });
+    await use({ account, writes, exports, exportReply, staffApi });
   }, { auto: true }], // signed in for every test in this file
 });
 
@@ -402,7 +438,8 @@ test.describe("municipality admin", () => {
     await expect(pager).toContainText(`of ${total}`);
     await page.getByRole("button", { name: "Next" }).click();
     await expect(page.locator(".adm-page-of")).toHaveText(/Page 2 of/);
-    await rows.first().getByRole("button", { name: "Open report" }).click();
+    // only report rows can be opened (the log also holds exports and staff changes)
+    await rows.getByRole("button", { name: "Open report" }).first().click();
     await expect(page.getByRole("dialog").getByRole("heading", { level: 3, name: "History" })).toBeVisible();
   });
   test("the reports export sends only the filters and tells the person what happened", async ({ page, staff }) => {
@@ -516,6 +553,98 @@ test.describe("municipality admin", () => {
     expect((await fs.readFile(await file.path(), "utf8")).replace(BOM, "").split("\r\n")[0]).toBe("rank,ward,reports_in_window,active,overdue,repeat_locations,average_days_to_clean,score,small_sample");
   });
 
+
+  test("does not see Municipal admins, and is sent to the Dashboard from its address", async ({ page, staff }) => {
+    const asked = [];
+    page.on("request", request => { if (request.url().includes("/api/admin/staff")) asked.push(request.url()); });
+    await page.goto("/admin#/admins");
+    await expect(page.getByRole("heading", { level: 2 })).toHaveText("Dashboard");
+    await expect(page).toHaveURL(/#\/dashboard$/);
+    await expect(page.getByRole("navigation", { name: "Admin sections" }).getByRole("link", { name: /municipal admins/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /add municipal admin/i })).toHaveCount(0);
+    expect(asked).toEqual([]); // the page never asked for the staff list
+    expect(staff.staffApi.calls).toEqual([]);
+    // typing it while the app is open changes the address back too
+    await page.evaluate(() => { window.location.hash = "#/admins"; });
+    await expect(page).toHaveURL(/#\/dashboard$/);
+    await expect(page.getByRole("heading", { level: 2 })).toHaveText("Dashboard");
+    // the same from a deeper address, and after a refresh
+    await page.goto("/admin#/admins/anything?x=1");
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 2 })).toHaveText("Dashboard");
+    await expect(page).toHaveURL(/#\/dashboard$/);
+    expect(asked).toEqual([]);
+  });
+
+  test("the audit export is the list's filters, labelled for what it does", async ({ page, staff }) => {
+    await page.goto("/admin#/audit");
+    await expect(page.locator(".adm-table tbody tr").first()).toBeVisible();
+    const button = page.getByRole("button", { name: /^Export/ });
+    await expect(button).toHaveText("Export all CSV");
+    await expect(page.getByText("Exports only the rows matching your filters")).toHaveCount(0);
+
+    // a date range and an action: the list asks, then the export carries the same filters
+    const listRequest = page.waitForRequest(request => request.url().endsWith("/api/admin/rest") && /audit_log/.test(request.postData() || "") && /action=eq\.status_change/.test(request.postData() || "") && /created_at\.lte/.test(request.postData() || ""));
+    await page.getByLabel("From", { exact: true }).fill("2026-09-01");
+    await page.getByLabel("To", { exact: true }).fill("2026-10-11");
+    await page.getByLabel("Action").selectOption("status_change");
+    const listEnvelope = JSON.parse((await listRequest).postData());
+    await expect(button).toHaveText("Export filtered CSV");
+    await expect(page.getByText("Exports only the rows matching your filters")).toBeVisible();
+
+    const download = page.waitForEvent("download");
+    await button.click();
+    expect((await download).suggestedFilename()).toBe("jabor-audit-log-test.csv");
+    expect(staff.exports).toHaveLength(1);
+    const exported = staff.exports[0];
+    expect(Object.keys(exported).sort()).toEqual(["path", "type"]);
+    expect(exported.type).toBe("audit_log");
+    const listUrl = new URL(listEnvelope.path, "http://x");
+    const exportUrl = new URL(exported.path, "http://x");
+    expect(exportUrl.pathname).toBe("/rest/v1/audit_log");
+    // everything the list filters by is in the export; the columns, order and paging are the list's own and stay out
+    const filtersOf = url => [...url.searchParams.entries()].filter(([key]) => !["select", "order", "limit", "offset"].includes(key)).sort();
+    expect(filtersOf(exportUrl)).toEqual(filtersOf(listUrl));
+    expect(filtersOf(exportUrl).map(([key]) => key).sort()).toEqual(["action", "and"]);
+    expect(exportUrl.searchParams.get("and")).toMatch(/created_at\.gte\.2026-.*created_at\.lte\.2026-/);
+    for (const key of ["select", "order", "limit", "offset", "municipality_id"]) expect(exportUrl.searchParams.has(key)).toBe(false);
+    await expect(page.getByRole("status").filter({ hasText: "Downloaded 2 rows." })).toBeVisible();
+
+    // clearing the filters puts the label back, and the export carries none
+    await page.getByRole("button", { name: "Clear filters" }).click();
+    await expect(button).toHaveText("Export all CSV");
+    const second = page.waitForEvent("download");
+    await button.click();
+    await second;
+    expect(staff.exports[1].path).toBe("/rest/v1/audit_log?");
+  });
+
+  test("the audit export is disabled while it runs, and says when the file was cut or failed", async ({ page, staff }) => {
+    await page.goto("/admin#/audit");
+    await expect(page.locator(".adm-table tbody tr").first()).toBeVisible();
+    const button = page.getByRole("button", { name: /^Export/ });
+    staff.exportReply.delay = 600;
+    const download = page.waitForEvent("download");
+    await button.click();
+    await expect(page.getByRole("button", { name: "Preparing…" })).toBeDisabled();
+    await download;
+    await expect(button).toBeEnabled();
+    staff.exportReply.delay = 0;
+
+    staff.exportReply.truncated = true;
+    const cut = page.waitForEvent("download");
+    await button.click();
+    await cut;
+    await expect(page.getByRole("status").filter({ hasText: /newest 10,000 rows.*12,345 rows match.*Narrow the filters/ })).toBeVisible();
+    staff.exportReply.truncated = false;
+
+    staff.exportReply.status = 500;
+    await button.click();
+    await expect(page.getByRole("alert").filter({ hasText: "The server had a problem. Please try again." })).toBeVisible();
+    await expect(button).toBeEnabled();
+    expect(staff.exports).toHaveLength(3);
+  });
+
   test("the proxy refuses a municipality, a window or a month it does not allow", async ({ page }) => {
     await page.goto("/admin");
     const post = (path, body) => proxy(page, { path, method: "POST", body });
@@ -530,13 +659,163 @@ test.describe("owner", () => {
   test.skip(needsSuper, "E2E_SUPER_EMAIL and E2E_SUPER_PASSWORD are not set");
   test.use(DESKTOP);
 
+  test("[super] Municipal admins lists staff and gives super admins no actions", async ({ page }) => {
+    await page.goto("/admin");
+    const side = page.getByRole("navigation", { name: "Admin sections" });
+    await expect(side.getByRole("link")).toHaveText(["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log", "Municipal admins", "Cleanup Verification", "Moderation"]);
+    await side.getByRole("link", { name: "Municipal admins" }).click();
+    await expect(page.getByRole("heading", { level: 2 })).toHaveText("Municipal admins");
+    await expect(page).toHaveURL(/#\/admins$/);
+    await expect(page.getByRole("columnheader")).toHaveText(["Email", "Municipality", "Status", "Created", "Actions"]);
+    const rows = page.locator(".adm-table tbody tr");
+    await expect(rows).toHaveCount(3);
+    const owner = rows.filter({ hasText: "owner@example.test" });
+    await expect(owner).toContainText("Super admin");
+    await expect(owner.getByRole("button")).toHaveCount(0);
+    await expect(rows.filter({ hasText: "jmb@example.test" })).toContainText("Active");
+    await expect(rows.filter({ hasText: "jmb@example.test" })).toContainText("Jorhat Municipal Board");
+    await expect(rows.filter({ hasText: "jmb@example.test" }).getByRole("button", { name: "Deactivate" })).toBeVisible();
+    await expect(rows.filter({ hasText: "former@example.test" })).toContainText("Inactive");
+    await expect(rows.filter({ hasText: "former@example.test" }).getByRole("button", { name: "Reactivate" })).toBeVisible();
+    // a refresh stays on the page
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 2 })).toHaveText("Municipal admins");
+  });
+
+  test("[super] adds a municipal admin: one-time panel, copy, and the password is cleared on dismiss", async ({ page, context, staff }) => {
+    const logs = [];
+    page.on("console", message => logs.push(message.text()));
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.goto("/admin#/admins");
+    await page.getByRole("button", { name: "Add municipal admin" }).click();
+    const form = page.getByRole("form", { name: "Add municipal admin" });
+    await expect(form.getByLabel("Municipality")).toHaveValue(/.+/);
+    await expect(form.getByLabel("Municipality").locator("option:checked")).toContainText("Jorhat");
+    await expect(form.getByLabel(/role/i)).toHaveCount(0); // there is no role field
+
+    // a short password is caught before anything is sent
+    await form.getByLabel("Email").fill("  New.Admin@Example.TEST ");
+    const password = form.getByLabel("Password", { exact: true });
+    await expect(password).toHaveAttribute("type", "password");
+    await password.fill("short");
+    await expect(form.getByText("At least 12 characters.")).toBeVisible();
+    await form.getByRole("button", { name: "Create account" }).click();
+    await expect(form.getByRole("alert")).toHaveText("Use at least 12 characters.");
+    expect(staff.staffApi.calls).toEqual([]);
+    // show and hide
+    await form.getByRole("button", { name: "Show password" }).click();
+    await expect(password).toHaveAttribute("type", "text");
+    await form.getByRole("button", { name: "Hide password" }).click();
+    await expect(password).toHaveAttribute("type", "password");
+    // generate: 16 or more random characters, shown so they can be read, different each time
+    await form.getByRole("button", { name: "Generate strong password" }).click();
+    await expect(password).toHaveAttribute("type", "text");
+    const first = await password.inputValue();
+    expect(first.length).toBeGreaterThanOrEqual(16);
+    expect(first).toMatch(/[a-z]/); expect(first).toMatch(/[A-Z]/); expect(first).toMatch(/[0-9]/); expect(first).toMatch(/[-_!@#$%*+=?]/);
+    await form.getByRole("button", { name: "Generate strong password" }).click();
+    expect(await password.inputValue()).not.toBe(first);
+    await expect(form.getByText("Long enough.")).toBeVisible();
+    const chosen = await password.inputValue();
+
+    await form.getByRole("button", { name: "Create account" }).click();
+    const panel = page.getByRole("status", { name: "New account details" });
+    await expect(panel).toBeVisible();
+    // what was sent: the email trimmed and lowercased, the password, a municipality, and no role
+    expect(staff.staffApi.calls).toHaveLength(1);
+    expect(Object.keys(staff.staffApi.calls[0].body).sort()).toEqual(["email", "municipality_id", "password"]);
+    expect(staff.staffApi.calls[0].body.email).toBe("new.admin@example.test");
+    expect(staff.staffApi.calls[0].body.password).toBe(chosen);
+    // the panel shows both, with the warning, and the form is gone
+    await expect(panel).toContainText("new.admin@example.test");
+    await expect(panel.locator("code")).toHaveText(chosen);
+    await expect(panel).toContainText("Send this to the admin through a secure channel. It will not be shown again.");
+    await expect(page.getByRole("form", { name: "Add municipal admin" })).toHaveCount(0);
+    await expect(page.locator(".adm-table tbody tr").filter({ hasText: "new.admin@example.test" })).toBeVisible(); // the table refreshed
+    // copy
+    await panel.getByRole("button", { name: /Copy email and password/ }).click();
+    await expect(panel.getByText("Copied.")).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`Email: new.admin@example.test\nPassword: ${chosen}`);
+    // the password is nowhere else: not the address, storage, cookies or the console
+    expect(page.url()).not.toContain(chosen);
+    expect(await page.evaluate(() => JSON.stringify([localStorage, sessionStorage]))).not.toContain(chosen);
+    expect((await context.cookies()).map(c => c.value).join()).not.toContain(chosen);
+    expect(logs.join("\n")).not.toContain(chosen);
+    // dismissing removes it from the page
+    await panel.getByRole("button", { name: "Done" }).click();
+    await expect(panel).toHaveCount(0);
+    expect(await page.content()).not.toContain(chosen);
+    await page.getByRole("button", { name: "Add municipal admin" }).click();
+    await expect(page.getByLabel("Password", { exact: true })).toHaveValue(""); // a new form starts empty
+    expect(staff.staffApi.calls).toHaveLength(1);
+  });
+
+  test("[super] says in plain words what went wrong when adding fails", async ({ page, staff }) => {
+    await page.goto("/admin#/admins");
+    await page.getByRole("button", { name: "Add municipal admin" }).click();
+    const form = page.getByRole("form", { name: "Add municipal admin" });
+    await form.getByLabel("Email").fill("taken@example.test");
+    await form.getByLabel("Password", { exact: true }).fill("a-long-test-password-1");
+    const expectations = [
+      ["conflict", "An account with this email already exists. Nothing was changed."],
+      ["bad", "Enter a valid email address."],
+      ["forbidden", "You do not have permission to do that."],
+      ["limit", "Too many attempts. Please wait a while and try again."],
+      ["network", "Could not reach the server. Check your connection and try again."],
+      ["raw", "Something went wrong. Please try again."],
+    ];
+    for (const [mode, text] of expectations) {
+      staff.staffApi.mode = mode;
+      await form.getByRole("button", { name: "Create account" }).click();
+      await expect(form.getByRole("alert")).toHaveText(text);
+      await expect(page.getByRole("status", { name: "New account details" })).toHaveCount(0);
+      await expect(form.getByLabel("Password", { exact: true })).toHaveValue("a-long-test-password-1"); // kept, so it can be tried again
+    }
+    expect(await page.locator("body").innerText()).not.toMatch(/duplicate key|staff_profiles_pkey/);
+    // client side checks for the email
+    staff.staffApi.mode = "ok";
+    const before = staff.staffApi.calls.length;
+    await form.getByLabel("Email").fill("not-an-email");
+    await form.getByRole("button", { name: "Create account" }).click();
+    await expect(form.getByRole("alert")).toHaveText("Enter a valid email address.");
+    expect(staff.staffApi.calls.length).toBe(before);
+  });
+
+  test("[super] deactivating asks first and says it takes effect immediately", async ({ page, staff }) => {
+    await page.goto("/admin#/admins");
+    const row = page.locator(".adm-table tbody tr").filter({ hasText: "jmb@example.test" });
+    await row.getByRole("button", { name: "Deactivate" }).click();
+    const dialog = page.getByRole("dialog", { name: "Deactivate this account?" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("jmb@example.test");
+    await expect(dialog).toContainText("immediately");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toBeHidden();
+    expect(staff.staffApi.calls).toEqual([]);
+    await expect(row).toContainText("Active");
+
+    await row.getByRole("button", { name: "Deactivate" }).click();
+    await dialog.getByRole("button", { name: "Deactivate" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "jmb@example.test is now inactive." })).toBeVisible();
+    expect(staff.staffApi.calls).toEqual([{ path: "/api/admin/staff/status", body: { user_id: "aaaaaaaa-0000-4000-8000-000000000002", is_active: false } }]);
+    await expect(row).toContainText("Inactive");
+    await expect(row.getByRole("button", { name: "Reactivate" })).toBeVisible();
+
+    await row.getByRole("button", { name: "Reactivate" }).click();
+    const again = page.getByRole("dialog", { name: "Reactivate this account?" });
+    await expect(again).toContainText("sign in again");
+    await again.getByRole("button", { name: "Reactivate" }).click();
+    await expect(row).toContainText("Active");
+    expect(staff.staffApi.calls[1].body).toEqual({ user_id: "aaaaaaaa-0000-4000-8000-000000000002", is_active: true });
+  });
+
   test("[super] chooses a municipality and keeps the older screens", async ({ page }) => {
     await page.goto("/admin");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Jabor - Super admin");
     const selector = page.getByLabel("Municipality");
     await expect(selector).toBeVisible();
     await expect(selector.locator("option:checked")).toContainText("Jorhat");
-    await expect(page.getByRole("navigation", { name: "Admin sections" }).getByRole("link")).toHaveText(["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log", "Cleanup Verification", "Moderation"]);
+    await expect(page.getByRole("navigation", { name: "Admin sections" }).getByRole("link")).toHaveText(["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log", "Municipal admins", "Cleanup Verification", "Moderation"]);
     await expect(page.locator(".adm-tile", { hasText: "Total" }).locator(".adm-tile-value")).not.toHaveText("0");
     await page.getByRole("button", { name: "Account" }).click();
     await expect(page.getByRole("dialog", { name: "Account" })).toContainText("Super admin");
@@ -601,5 +880,48 @@ test.describe("municipality admin on a 360px phone", () => {
     await expect(page.locator(".adm-table tbody tr").first()).toBeVisible();
     await page.locator(".adm-table tbody .adm-link").first().click();
     await expect(page.getByRole("dialog").getByRole("heading", { level: 3, name: "History" })).toBeVisible();
+  });
+});
+
+test.describe("owner on a 360px phone", () => {
+  test.skip(needsSuper, "E2E_SUPER_EMAIL and E2E_SUPER_PASSWORD are not set");
+  test.use(PHONE);
+
+  test("[super] Municipal admins fits and works on a phone", async ({ page, staff }) => {
+    await page.goto("/admin");
+    await page.getByRole("button", { name: "Menu", exact: true }).click();
+    await page.getByRole("navigation", { name: "Admin sections" }).getByRole("link", { name: "Municipal admins" }).click();
+    await expect(page.getByRole("heading", { level: 2 })).toHaveText("Municipal admins");
+    const noSideways = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+    expect(await noSideways()).toBe(true);
+    await expect(page.locator(".adm-table tbody tr").first()).toBeVisible();
+    for (const button of await page.locator(".adm-table tbody").getByRole("button").all()) expect((await button.boundingBox()).height).toBeGreaterThanOrEqual(44);
+
+    await page.getByRole("button", { name: "Add municipal admin" }).click();
+    const form = page.getByRole("form", { name: "Add municipal admin" });
+    expect(await noSideways()).toBe(true);
+    for (const control of [form.getByLabel("Email"), form.getByLabel("Municipality"), form.getByLabel("Password", { exact: true }), form.getByRole("button", { name: "Show password" }), form.getByRole("button", { name: "Generate strong password" }), form.getByRole("button", { name: "Create account" })]) {
+      const box = await control.boundingBox();
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(360);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+    await form.getByLabel("Email").fill("phone.admin@example.test");
+    await form.getByRole("button", { name: "Generate strong password" }).click();
+    await form.getByRole("button", { name: "Create account" }).click();
+    const panel = page.getByRole("status", { name: "New account details" });
+    await expect(panel).toBeVisible();
+    expect(await noSideways()).toBe(true);
+    const box = await panel.boundingBox();
+    expect(box.x + box.width).toBeLessThanOrEqual(360);
+    await panel.getByRole("button", { name: "Done" }).click();
+    // the confirmation dialog fits too
+    await page.locator(".adm-table tbody tr").filter({ hasText: "jmb@example.test" }).getByRole("button", { name: "Deactivate" }).click();
+    const dialog = page.getByRole("dialog", { name: "Deactivate this account?" });
+    const dialogBox = await dialog.boundingBox();
+    expect(dialogBox.x).toBeGreaterThanOrEqual(0);
+    expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(360);
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    expect(staff.staffApi.calls).toHaveLength(1);
   });
 });

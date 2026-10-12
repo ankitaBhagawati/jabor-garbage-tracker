@@ -216,3 +216,33 @@
 .adm-tile { text-decoration: none; }
 @media (max-width: 520px) { .adm-segments { flex-wrap: nowrap; overflow-x: auto; } }
 .adm-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: 0.06em; color: var(--adm-muted); margin: 0 0 4px; }
+
+/* ── Municipal admins and the audit export ────────────────────────────── */
+.adm-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.adm-toolbar .adm-intro { margin: 0; flex: 1 1 260px; }
+.adm-add { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.adm-badge-on { background: #d9f4e4; color: #0b5d36; }
+.adm-badge-off { background: #eceeed; color: #3c4a42; }
+.adm-cell-email { overflow-wrap: anywhere; }
+.adm-staff-form { max-width: 520px; margin-bottom: 14px; }
+.adm-staff-form h3, .adm-secret h3 { margin: 0 0 6px; font-size: 16px; font-weight: 900; }
+.adm-password { display: flex; align-items: center; gap: 6px; }
+.adm-password .inp { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.02em; }
+.adm-password .inp[type="password"] { font-family: inherit; }
+.adm-hint { margin: 2px 0 0; font-size: 12px; color: var(--adm-muted); }
+.adm-hint.is-ok { color: #0b5d36; font-weight: 700; }
+.adm-generate { margin-top: 6px; min-height: 44px; display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; }
+.adm-secret { background: #fff8e5; border: 1px solid #e3c36a; border-radius: 10px; padding: 14px; margin-bottom: 14px; max-width: 620px; }
+.adm-secret-list { display: grid; grid-template-columns: 90px 1fr; gap: 6px 10px; margin: 8px 0; font-size: 14px; }
+.adm-secret-list dt { color: var(--adm-muted); }
+.adm-secret-list dd { margin: 0; overflow-wrap: anywhere; }
+.adm-secret-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; font-weight: 800; user-select: all; background: #fff; border: 1px solid #e3c36a; border-radius: 6px; padding: 3px 8px; display: inline-block; }
+.adm-secret-note { font-size: 13px; font-weight: 700; margin: 6px 0 10px; }
+.adm-secret .adm-actions button { display: inline-flex; align-items: center; gap: 8px; }
+.adm-dialog { border: 1px solid var(--adm-line); border-radius: 12px; padding: 20px; max-width: 440px; width: calc(100% - 32px); margin: auto; color: var(--adm-ink); }
+.adm-dialog::backdrop { background: rgba(22, 29, 25, .45); }
+.adm-dialog h3 { margin: 0 0 8px; font-size: 17px; font-weight: 900; }
+.adm-dialog-text { font-size: 14px; line-height: 1.5; margin: 0 0 14px; overflow-wrap: anywhere; }
+.adm-export-line { margin: -4px 0 10px; font-size: 13px; }
+.adm-actions.adm-dialog-actions { justify-content: flex-end; }
+.adm-table-staff .btn-s { min-height: 44px; }
