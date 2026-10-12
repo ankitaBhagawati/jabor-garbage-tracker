@@ -10,7 +10,8 @@ import { useAsync } from "./useAsync.ts";
 type Props = { scope: Scope; version: number };
 
 const WINDOWS: HotspotWindow[] = [30, 60, 90];
-const TOP = 10;
+const TOP = 10; // bars in the chart
+const DEFAULT_ROWS = 5; // wards shown until the person asks for all
 
 // A plain SVG bar chart of the highest scores. No map, no coordinates: wards only.
 function ScoreChart({ rows }: { rows: HotspotRow[] }) {
@@ -33,7 +34,9 @@ function ScoreChart({ rows }: { rows: HotspotRow[] }) {
 export default function Hotspots({ scope, version }: Props) {
   const [span, setSpan] = useState<HotspotWindow>(30);
   const result = useAsync(async () => (await adminRequest<HotspotRow[]>(hotspotsEnvelope(scope, span))).data, [scope.municipalityId, span, version]);
+  const [showAll, setShowAll] = useState(false);
   const rows = result.data ?? [];
+  const shown = showAll ? rows : rows.slice(0, DEFAULT_ROWS);
   const anyReports = rows.some(r => r.reports > 0);
 
   return (
@@ -61,7 +64,7 @@ export default function Hotspots({ scope, version }: Props) {
           <p className="adm-formula">
             <strong>Score</strong> = <span title="An overdue report is also active, so it counts 3 + 1.">{HOTSPOT_FORMULA}</span>. Higher means more attention needed.
           </p>
-          {anyReports && <ScoreChart rows={rows} />}
+          {anyReports && <ScoreChart rows={shown} />}
           <div className={`adm-table-wrap${result.loading ? " is-loading" : ""}`} aria-busy={result.loading}>
             <table className="adm-rtable">
               <caption className="adm-sr">Wards ranked by hotspot score, reports from the last {span} days</caption>
@@ -78,7 +81,7 @@ export default function Hotspots({ scope, version }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(r => (
+                {shown.map(r => (
                   <tr key={r.ward_id}>
                     <td className="adm-num" data-label="Rank">{r.rank}</td>
                     <th scope="row" data-label="Ward">
@@ -96,6 +99,12 @@ export default function Hotspots({ scope, version }: Props) {
               </tbody>
             </table>
           </div>
+          {rows.length > DEFAULT_ROWS && (
+            <div className="adm-showmore">
+              <span className="adm-muted">{showAll ? `Showing all ${rows.length} wards` : `Showing the top ${DEFAULT_ROWS} of ${rows.length} wards`}</span>
+              <button type="button" className="btn-s" aria-expanded={showAll} onClick={() => setShowAll(v => !v)}>{showAll ? `Show top ${DEFAULT_ROWS}` : "Show all wards"}</button>
+            </div>
+          )}
           <p className="adm-muted adm-note-small">A ward with fewer than {SMALL_SAMPLE} reports in the window is marked <em>Small sample</em>; its place in the ranking says little. Reports without a ward are not ranked.</p>
         </>
       )}

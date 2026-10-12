@@ -2,7 +2,7 @@
 // touches the network or the browser, so api/_lib/dashboard.check.js can run each one against the proxy's
 // allowlist for each role. If a screen needs a query the allowlist does not permit, that test fails.
 import { DAY, LEGACY_ACTIVE } from "./format.ts";
-import type { Filters, Sort, Status } from "./types.ts";
+import type { Filters, ReportTab, Sort, Status } from "./types.ts";
 
 export const PAGE_SIZE = 25;
 
@@ -36,6 +36,20 @@ export function statusConditions(status: Status | "auto_cleaned"): string[] {
   }
 }
 
+// The extra conditions of one Reports tab. "Unassigned wards" is reports with no ward that are not Invalid and not
+// Hidden (Invalid or hidden reports are outside the workflow, so no ward is owed for them). "All reports" has none.
+export const NON_INVALID = `status.in.(${[...LEGACY_ACTIVE, "in_progress", "cleaned"].join(",")})`;
+export function tabConditions(tab: ReportTab): string[] {
+  switch (tab) {
+    case "unassigned": return ["ward_id.is.null", NOT_HIDDEN, NON_INVALID];
+    case "active": return statusConditions("active");
+    case "in_progress": return statusConditions("in_progress");
+    case "cleaned": return statusConditions("cleaned");
+    case "all":
+    case "hidden": return [];
+  }
+}
+
 // What a person typed into the search box, made safe to put inside a quoted filter value: quotes,
 // backslashes and control characters are dropped, and it is cut to 80 characters.
 export const cleanSearch = (text: string) => text.replace(/["\\]/g, "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 80);
@@ -44,13 +58,16 @@ export const overdueCutoff = (now: Date, days: number) => new Date(now.getTime()
 const dayStart = (date: string) => new Date(`${date}T00:00:00`).toISOString();
 const dayEnd = (date: string) => new Date(`${date}T23:59:59.999`).toISOString();
 
-export function reportConditions(filters: Filters, now: Date, overdueDays: number): string[] {
-  const conditions: string[] = [];
-  const status: Status | "auto_cleaned" | "" = filters.overdueOnly ? "active" : filters.status;
+export function reportConditions(filters: Filters, now: Date, overdueDays: number, tab: ReportTab = "all"): string[] {
+  const conditions: string[] = [...tabConditions(tab)];
+  // the status filter only exists on "All reports"; the other tabs already say which reports they hold
+  const status: Status | "auto_cleaned" | "" = filters.overdueOnly ? "active" : tab === "all" ? filters.status : "";
   if (status) conditions.push(...statusConditions(status));
   if (filters.overdueOnly) conditions.push(`created_at.lt.${overdueCutoff(now, overdueDays)}`);
-  if (filters.ward === "unassigned") conditions.push("ward_id.is.null");
-  else if (filters.ward) conditions.push(`ward_id.eq.${filters.ward}`);
+  if (tab !== "unassigned") {
+    if (filters.ward === "unassigned") conditions.push("ward_id.is.null");
+    else if (filters.ward) conditions.push(`ward_id.eq.${filters.ward}`);
+  }
   if (filters.from) conditions.push(`created_at.gte.${dayStart(filters.from)}`);
   if (filters.to) conditions.push(`created_at.lte.${dayEnd(filters.to)}`);
   const text = cleanSearch(filters.q);
@@ -64,23 +81,24 @@ export function reportConditions(filters: Filters, now: Date, overdueDays: numbe
 const andParam = (conditions: string[]): [string, string][] => (conditions.length ? [["and", `(${conditions.join(",")})`]] : []);
 
 // ── Summary tiles: one cheap count per tile ──────────────────────────────────
-export const TILE_KEYS = ["total", "active", "in_progress", "cleaned", "invalid", "overdue", "auto_cleaned"] as const;
+export const TILE_KEYS = ["total", "active", "in_progress", "cleaned", "invalid", "overdue", "unassigned", "auto_cleaned"] as const;
 export type TileKey = (typeof TILE_KEYS)[number];
 
 export function tileEnvelope(key: TileKey, scope: Scope, now: Date, overdueDays: number): Envelope {
   const conditions: string[] =
     key === "total" ? [] :
     key === "overdue" ? [...statusConditions("active"), `created_at.lt.${overdueCutoff(now, overdueDays)}`] :
+    key === "unassigned" ? tabConditions("unassigned") :
     statusConditions(key);
   return { path: `/rest/v1/reports?${query(scoped(scope, [["select", "id"], ["limit", "1"], ...andParam(conditions)]))}`, method: "GET", prefer: "count=exact" };
 }
 
 // ── The reports table ────────────────────────────────────────────────────────
-export function reportsPageEnvelope(scope: Scope, filters: Filters, sort: Sort, page: number, now: Date, overdueDays: number): Envelope {
+export function reportsPageEnvelope(scope: Scope, filters: Filters, sort: Sort, page: number, now: Date, overdueDays: number, tab: ReportTab = "all"): Envelope {
   const order = sort.key === "created_at" || sort.key === "updated_at" ? `${sort.key}.${sort.dir},id.asc` : `${sort.key}.${sort.dir},created_at.desc`;
   return {
     path: `/rest/v1/reports?${query(scoped(scope, [
-      ["select", REPORT_LIST_COLUMNS], ...andParam(reportConditions(filters, now, overdueDays)),
+      ["select", REPORT_LIST_COLUMNS], ...andParam(reportConditions(filters, now, overdueDays, tab)),
       ["order", order], ["limit", String(PAGE_SIZE)], ["offset", String((Math.max(1, page) - 1) * PAGE_SIZE)],
     ]))}`,
     method: "GET",
@@ -136,8 +154,8 @@ export const hiddenHistoryEnvelope = (ids: string[]): Envelope => ({
 
 // ── Exports and reports (T6/T7) ──────────────────────────────────────────────
 // The CSV export sends only the filters. The server picks the columns, the order and the paging.
-export const exportEnvelope = (scope: Scope, filters: Filters, now: Date, overdueDays: number): { path: string } => ({
-  path: `/rest/v1/reports?${query(scoped(scope, andParam(reportConditions(filters, now, overdueDays))))}`,
+export const exportEnvelope = (scope: Scope, filters: Filters, now: Date, overdueDays: number, tab: ReportTab = "all"): { path: string } => ({
+  path: `/rest/v1/reports?${query(scoped(scope, andParam(reportConditions(filters, now, overdueDays, tab))))}`,
 });
 
 // month is "yyyy-mm". A municipality admin never sends a municipality: the proxy adds their own.

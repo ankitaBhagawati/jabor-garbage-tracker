@@ -11,7 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",
-    "test": "node api/_lib/check.js && node api/_lib/access.check.js && node api/_lib/edge.check.js && node api/_lib/dashboard.check.js && node api/_lib/export.check.js && node api/_lib/staff-mgmt.check.js && node api/_lib/reports.check.js && node src/ui/selectLogic.check.js && node scripts/lib/target.check.mjs && node scripts/lib/demo-data.check.mjs",
+    "test": "node api/_lib/check.js && node api/_lib/access.check.js && node api/_lib/edge.check.js && node api/_lib/dashboard.check.js && node api/_lib/export.check.js && node api/_lib/reports.check.js && node src/ui/selectLogic.check.js && node scripts/lib/target.check.mjs && node scripts/lib/demo-data.check.mjs && node src/admin/shell.check.js && node api/_lib/staff-mgmt.check.js",
     "test:smoke": "playwright test",
     "check:bundle": "node scripts/check-bundle.mjs",
     "typecheck": "tsc --noEmit"
