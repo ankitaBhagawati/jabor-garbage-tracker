@@ -8,6 +8,7 @@ import MonthlyReport from "./MonthlyReport.tsx";
 import { Icon } from "./icons.tsx";
 import { headerTitle, navFor } from "./nav.ts";
 import Reports from "./Reports.tsx";
+import StaffAdmin from "./StaffAdmin.tsx";
 import { DEFAULT_ROUTE, formatRoute, parseRoute, type Route } from "./route.ts";
 import UserMenu from "./UserMenu.tsx";
 import { ErrorBox } from "./Pieces.tsx";
@@ -26,6 +27,13 @@ type Props = {
   extraTabs?: ExtraTab[];
   onChanged?: () => void;
 };
+
+// The address of a page this person does not have (a municipality admin typing #/admins) is replaced by the
+// Dashboard's. The server refuses those requests anyway; this is only so the address does not lie.
+function settleAddress(route: Route) {
+  const first = window.location.hash.replace(/^#\/?/, "").split(/[/?]/)[0];
+  if (first && first !== route.page) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${formatRoute(route)}`);
+}
 
 const WIDE = "(min-width: 900px)";
 const isWide = () => (typeof window.matchMedia === "function" ? window.matchMedia(WIDE).matches : true);
@@ -61,11 +69,13 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
 
   // Back and forward, and a hand-edited address, change the page.
   useEffect(() => {
-    const sync = () => { setRoute(parseRoute(window.location.hash, pages)); setReportsSeq(n => n + 1); };
+    const sync = () => { const next = parseRoute(window.location.hash, pages); settleAddress(next); setRoute(next); setReportsSeq(n => n + 1); };
     window.addEventListener("popstate", sync);
     window.addEventListener("hashchange", sync);
     return () => { window.removeEventListener("popstate", sync); window.removeEventListener("hashchange", sync); };
   }, [pages]);
+
+  useEffect(() => { settleAddress(route); }, [route]);
 
   const municipalities = useAsync(async () => (await adminRequest<MunicipalityInfo[]>(municipalitiesEnvelope())).data, []);
   const list = municipalities.data ?? [];
@@ -116,6 +126,7 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
   );
   else if (route.page === "monthly") body = <MonthlyReport key={municipality.id} scope={scope} municipalityName={municipality.name} overdueDays={overdueDays} version={version} />;
   else if (route.page === "hotspots") body = <Hotspots key={municipality.id} scope={scope} version={version} />;
+  else if (route.page === "admins" && isSuper) body = <StaffAdmin municipalities={list} />;
   else if (route.page === "audit") body = <AuditLog key={municipality.id} scope={scope} wards={wardList} version={version} onOpenReport={setOpenReport} />;
   else body = <div className="adm-panel">{extraTabs.find(t => t.id === route.page)?.render({ onPhotoClick: setPhoto, version })}</div>;
 

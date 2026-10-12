@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { adminRequest } from "./adminApi.ts";
+import { adminRequest, downloadCsv } from "./adminApi.ts";
 import { ACTION_LABEL, actorLabel, describeAudit, formatDateTime } from "./format.ts";
-import { EMPTY_AUDIT_FILTERS, PAGE_SIZE, auditPageEnvelope, type AuditFilters, type Scope } from "./queryBuilders.ts";
+import { EMPTY_AUDIT_FILTERS, PAGE_SIZE, auditExportEnvelope, auditFiltersActive, auditPageEnvelope, type AuditFilters, type Scope } from "./queryBuilders.ts";
 import { EmptyBox, ErrorBox, Pager } from "./Pieces.tsx";
 import type { AuditRow, Ward } from "./types.ts";
 import { useAsync } from "./useAsync.ts";
@@ -14,6 +14,8 @@ export default function AuditLog({ scope, wards, version, onOpenReport }: Props)
   const [filters, setFilters] = useState<AuditFilters>(EMPTY_AUDIT_FILTERS);
   const [actor, setActor] = useState("");
   const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<{ text: string; kind: "ok" | "notice" | "error" } | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setFilters(f => (f.actor === actor ? f : { ...f, actor })), 300);
@@ -25,7 +27,25 @@ export default function AuditLog({ scope, wards, version, onOpenReport }: Props)
   const list = useAsync(() => adminRequest<AuditRow[]>(auditPageEnvelope(scope, filters, page)), [scope.municipalityId, filters, page, version]);
   const rows = list.data?.data ?? [];
   const filtersActive = JSON.stringify(filters) !== JSON.stringify(EMPTY_AUDIT_FILTERS);
+  const exportFiltered = auditFiltersActive(filters);
   const clear = () => { setActor(""); setFilters(EMPTY_AUDIT_FILTERS); };
+
+  // The file is built on the server from the same filters, through the same builder, as the list above.
+  const exportCsv = async () => {
+    setExporting(true);
+    setExportMessage(null);
+    try {
+      const result = await downloadCsv(auditExportEnvelope(scope, filters));
+      const rowsText = `${result.rows.toLocaleString("en-IN")} ${result.rows === 1 ? "row" : "rows"}`;
+      setExportMessage(result.truncated
+        ? { kind: "notice", text: `Downloaded the newest ${rowsText}. This is the most one file can hold${result.total ? ` (${result.total.toLocaleString("en-IN")} rows match)` : ""}. Narrow the filters or the dates to get the rest.` }
+        : { kind: "ok", text: `Downloaded ${rowsText}.` });
+    } catch (e) {
+      setExportMessage({ kind: "error", text: e instanceof Error ? e.message : "The export failed. Please try again." });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <section aria-label="Audit log" className="adm-panel">
@@ -51,7 +71,10 @@ export default function AuditLog({ scope, wards, version, onOpenReport }: Props)
           <input id="a-to" className="inp" type="date" value={filters.to} min={filters.from || undefined} onChange={e => { const value = e.target.value; setFilters(f => ({ ...f, to: value })); }} />
         </div>
         {filtersActive && <button type="button" className="btn-s adm-clear" onClick={clear}>Clear filters</button>}
+        <button type="button" className="btn-s adm-export" disabled={exporting} onClick={exportCsv}>{exporting ? "Preparing…" : exportFiltered ? "Export filtered CSV" : "Export all CSV"}</button>
       </div>
+      {exportFiltered && <p className="adm-muted adm-export-line">Exports only the rows matching your filters</p>}
+      {exportMessage && <p className={`adm-message adm-message-${exportMessage.kind === "error" ? "error" : exportMessage.kind === "notice" ? "info" : "ok"}`} role={exportMessage.kind === "error" ? "alert" : "status"}>{exportMessage.text}</p>}
 
       {list.error ? (
         <ErrorBox message={list.error} onRetry={list.reload} />

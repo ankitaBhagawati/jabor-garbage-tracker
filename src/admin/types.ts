@@ -97,3 +97,14 @@ export type HotspotWindow = 30 | 60 | 90;
 
 // The segmented tabs of the Reports page. "hidden" shows the Hidden list (restore); the rest are the table.
 export type ReportTab = "all" | "unassigned" | "active" | "in_progress" | "cleaned" | "hidden";
+
+// One row of GET /api/admin/staff.
+export type StaffRow = {
+  user_id: string;
+  email: string;
+  role: Role;
+  municipality_id: string | null;
+  municipality_name: string | null;
+  is_active: boolean;
+  created_at: string;
+};
