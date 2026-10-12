@@ -90,6 +90,17 @@ export async function rateLimit(req, name, max, windowSec) {
   if (count > max) throw new HttpError(429, "Too many requests. Please try again later.");
 }
 
+// A limiter that fails closed, for routes that create or change accounts. The counter is per actor (not per
+// address), kept in Upstash. If Redis is not configured or does not answer, the request is refused (503), never
+// let through. The in-memory fallback exists only off Vercel (local development and tests, where VERCEL_ENV is unset).
+export async function strictRateLimit(actorId, name, max, windowSec) {
+  const key = `jabor:rl2:${name}:actor:${actorId}`;
+  let count = await redisIncr(key, windowSec);
+  if (count === null && !process.env.VERCEL_ENV) count = memoryIncr(key, windowSec);
+  if (count === null) throw new HttpError(503, "Temporarily unavailable. Please try again later.");
+  if (count > max) throw new HttpError(429, "Too many requests. Please try again later.");
+}
+
 // ── Cloudflare Turnstile ─────────────────────────────────────────────────────
 export async function verifyTurnstile(req, token) {
   const secret = process.env.TURNSTILE_SECRET_KEY;
