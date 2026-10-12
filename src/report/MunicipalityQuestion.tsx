@@ -1,3 +1,4 @@
+import Select from "../ui/Select.tsx";
 import { WARD_NOT_SURE, wardLabel, type Answer, type Municipality } from "./placement.ts";
 
 type Props = {
@@ -41,14 +42,19 @@ export default function MunicipalityQuestion({ municipality, answer, wardChoice,
 
       {answer === "yes" && (
         <div style={{ marginTop: 8 }}>
-          <label className="lbl" htmlFor="ward-select">WARD <span style={{ color: "#10B981" }}>*</span></label>
-          <select id="ward-select" className="inp" value={wardChoice} onChange={e => onWard(e.target.value)}>
-            <option value="">Select ward</option>
-            {municipality.wards.map(ward => (
-              <option key={ward.id} value={ward.id}>{wardLabel(ward)}</option>
-            ))}
-            <option value={WARD_NOT_SURE}>Not sure, JMB will assign</option>
-          </select>
+          <label className="lbl" id="ward-label" htmlFor="ward-select">WARD <span style={{ color: "#10B981" }}>*</span></label>
+          <Select
+            id="ward-select"
+            labelledBy="ward-label"
+            label="ward"
+            placeholder="Select ward"
+            value={wardChoice}
+            options={[
+              ...municipality.wards.map(ward => ({ value: ward.id, label: wardLabel(ward) })),
+              { value: WARD_NOT_SURE, label: "Not sure, JMB will assign" },
+            ]}
+            onChange={onWard}
+          />
         </div>
       )}
     </div>
