@@ -5,7 +5,7 @@ import { REPORT_TABS } from "./route.ts";
 import { ageDays, ageLabel, isOverdue, statusOf, wardLabel } from "./format.ts";
 import { PAGE_SIZE, exportEnvelope, reportsPageEnvelope, type Scope } from "./queryBuilders.ts";
 import { EmptyBox, ErrorBox, OverdueBadge, Pager, StatusBadge } from "./Pieces.tsx";
-import { EMPTY_FILTERS, type Filters, type ReportRow, type ReportTab, type Role, type Sort, type SortKey, type StatusFilter, type Ward } from "./types.ts";
+import { EMPTY_FILTERS, type Filters, type ReportRow, type ReportTab, type Sort, type SortKey, type StatusFilter, type Ward } from "./types.ts";
 import { useAsync } from "./useAsync.ts";
 
 type TableProps = {
@@ -171,14 +171,13 @@ function ReportsTable({ scope, wards, overdueDays, version, tab, initial, onOpen
 }
 
 type PageProps = TableProps & {
-  role: Role;
   onTab: (tab: ReportTab) => void;
   onChanged: () => void;
   onPhotoClick: (url: string) => void;
 };
 
 // The Reports page: segmented tabs over the table. The Hidden tab is the list of hidden and invalid reports with Restore.
-export default function Reports({ role, onTab, onChanged, onPhotoClick, ...table }: PageProps) {
+export default function Reports({ onTab, onChanged, onPhotoClick, ...table }: PageProps) {
   const tab = table.tab;
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
@@ -212,7 +211,7 @@ export default function Reports({ role, onTab, onChanged, onPhotoClick, ...table
       <div id="rt-panel" role="tabpanel" aria-labelledby={`rt-${tab}`}>
         {tab === "hidden" ? (
           <div className="adm-panel">
-            <HiddenReports role={role} municipalityId={table.scope.municipalityId} version={table.version} onChanged={onChanged} onPhotoClick={onPhotoClick} />
+            <HiddenReports municipalityId={table.scope.municipalityId} version={table.version} onChanged={onChanged} onPhotoClick={onPhotoClick} />
           </div>
         ) : (
           <ReportsTable {...table} />

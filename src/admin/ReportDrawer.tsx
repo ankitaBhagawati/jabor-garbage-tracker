@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { restJson } from "../services/supabaseRest.js";
 import { AdminApiError, adminRequest } from "./adminApi.ts";
 import {
-  ACTION_LABEL_TEXT, INVALID_REASONS, WASTE_LABEL, actionsFor, actorLabel, ageDays, ageLabel, buildNotePatch, buildStatusPatch,
+  ACTION_LABEL_TEXT, INVALID_REASONS, WASTE_LABEL, actionsFor, actorLabel, ageDays, ageLabel, buildHidePatch, buildNotePatch, buildStatusPatch, buildUnhidePatch,
   describeAudit, formatDate, formatDateTime, isOverdue, statusOf, todayISO, wardLabel, type ActionId,
 } from "./format.ts";
 import { historyEnvelope, patchReportEnvelope, reportEnvelope } from "./queryBuilders.ts";
@@ -40,6 +40,7 @@ export default function ReportDrawer({ reportId, wards, overdueDays, onClose, on
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message>(null);
   const [open, setOpen] = useState<ActionId | null>(null);
+  const [visibility, setVisibility] = useState<"hide" | "restore" | null>(null);
   const [form, setForm] = useState({ name: "JMB team", date: todayISO(), reason: "", note: "" });
   const [wardChoice, setWardChoice] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
@@ -67,6 +68,7 @@ export default function ReportDrawer({ reportId, wards, overdueDays, onClose, on
       if (!Array.isArray(data) || data.length === 0) throw new AdminApiError("That report could not be updated. It may have been changed or removed; reload and try again.", 0);
       setMessage({ kind: "ok", text: success });
       setOpen(null);
+      setVisibility(null);
       setWardChoice(null);
       setNoteDraft(null);
       setForm(f => ({ ...f, reason: "", note: "" }));
@@ -100,6 +102,12 @@ export default function ReportDrawer({ reportId, wards, overdueDays, onClose, on
     const result = buildNotePatch(note, report?.admin_note ?? null);
     if ("error" in result) { setMessage({ kind: "error", text: result.error }); return; }
     send(result.body, "Note saved.");
+  }
+
+  function runVisibility(kind: "hide" | "restore") {
+    const result = kind === "hide" ? buildHidePatch(form.reason, form.note) : buildUnhidePatch({ status: report?.status ?? null }, form.note);
+    if ("error" in result) { setMessage({ kind: "error", text: result.error }); return; }
+    send(result.body, kind === "hide" ? "Hidden from the public site." : "Restored to the public site.");
   }
 
   function saveWard() {
@@ -170,7 +178,17 @@ export default function ReportDrawer({ reportId, wards, overdueDays, onClose, on
             {report.description && <p className="adm-description">{report.description}</p>}
 
             {hidden ? (
-              <p className="adm-message adm-message-info">This report is hidden from the public site. It can be restored from the Hidden tab by the owner.</p>
+              <section aria-label="Public site" className="adm-block">
+                <p className="adm-message adm-message-info">This report is hidden from the public site. Nothing is deleted: restoring puts it back.</p>
+                <div className="adm-actions"><button type="button" className="btn-s" disabled={busy} aria-expanded={visibility === "restore"} onClick={() => { setMessage(null); setVisibility(v => (v === "restore" ? null : "restore")); }}>Restore to public site</button></div>
+                {visibility === "restore" && (
+                  <form className="adm-form" onSubmit={e => { e.preventDefault(); runVisibility("restore"); }}>
+                    <label htmlFor="d-unhide-note">Note (optional)</label>
+                    <textarea id="d-unhide-note" className="inp" rows={2} maxLength={1000} value={form.note} placeholder="Why is it being restored?" onChange={e => { const value = e.target.value; setForm(f => ({ ...f, note: value })); }} />
+                    <div className="adm-actions"><button type="submit" className="btn-p" disabled={busy}>{busy ? "Saving…" : "Confirm restore"}</button><button type="button" className="btn-s" disabled={busy} onClick={() => setVisibility(null)}>Cancel</button></div>
+                  </form>
+                )}
+              </section>
             ) : (
               <>
                 <section aria-label="Status" className="adm-block">
@@ -226,6 +244,24 @@ export default function ReportDrawer({ reportId, wards, overdueDays, onClose, on
                     </select>
                     <button type="button" className="btn-s" disabled={busy || selectedWard === currentWard} onClick={saveWard}>Save ward</button>
                   </div>
+                </section>
+
+                <section aria-label="Public site" className="adm-block">
+                  <h3>Public site</h3>
+                  <p className="adm-muted">Hiding takes the report off the public site. It is not deleted and can be restored.</p>
+                  <div className="adm-actions"><button type="button" className="btn-s" disabled={busy} aria-expanded={visibility === "hide"} onClick={() => { setMessage(null); setVisibility(v => (v === "hide" ? null : "hide")); }}>Hide from public site</button></div>
+                  {visibility === "hide" && (
+                    <form className="adm-form" onSubmit={e => { e.preventDefault(); runVisibility("hide"); }}>
+                      <label htmlFor="d-hide-reason">Reason</label>
+                      <select id="d-hide-reason" className="inp" value={form.reason} onChange={e => { const value = e.target.value; setForm(f => ({ ...f, reason: value })); }}>
+                        <option value="">Choose a reason</option>
+                        {INVALID_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                      </select>
+                      <label htmlFor="d-hide-note">Note (optional)</label>
+                      <textarea id="d-hide-note" className="inp" rows={2} maxLength={1000} value={form.note} onChange={e => { const value = e.target.value; setForm(f => ({ ...f, note: value })); }} />
+                      <div className="adm-actions"><button type="submit" className="btn-p" disabled={busy}>{busy ? "Saving…" : "Confirm hide"}</button><button type="button" className="btn-s" disabled={busy} onClick={() => setVisibility(null)}>Cancel</button></div>
+                    </form>
+                  )}
                 </section>
 
                 <section aria-label="Internal note" className="adm-block">

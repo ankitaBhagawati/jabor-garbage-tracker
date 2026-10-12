@@ -177,3 +177,18 @@ Dedicated routes outside the proxy, super admin only (details: `docs/STAFF-MANAG
 Inactive staff, a missing profile, a token and profile that disagree, and a role such as `authenticated` get 403, as
 for the proxy. Creating accounts uses the Auth admin API with the service role key, on the server only. Create and
 status changes are limited to 10 per hour per actor and fail closed if Redis is unreachable.
+
+## 10. Hide and restore for municipality admins
+
+Changed in migration `20261012160000_t13_municipality_admin_hide`. A municipality admin may hide and unhide reports of
+their own municipality; before, only a super admin could.
+
+- **Database:** the update trigger on `reports` allows a change to `is_deleted` for any active staff member. Row level
+  security still limits a municipality admin to reports of their municipality, the column whitelist and the status rules
+  are unchanged, and nothing can be deleted (no role has DELETE). Every hide and unhide writes an audit row with the actor.
+- **Proxy:** `is_deleted` is added to a municipality admin's allowed update keys on `reports`, and it must be `true` or
+  `false` (for every role). Sent together with a key outside the allowed list, the request is still refused.
+- **Screens:** the report drawer has "Hide from public site" (reason required, note optional) and, for a hidden report,
+  "Restore to public site". The Hidden tab lets both roles restore.
+- **Not given to municipality admins:** the older owner screen **Moderation** (AI recommendations, which can email
+  authorities and post to X, and reporter contacts) and **Cleanup Verification** (cleanup proofs). Both stay super admin only.

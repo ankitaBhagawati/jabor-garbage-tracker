@@ -678,6 +678,60 @@ test.describe("municipality admin", () => {
     expect(staff.exports).toHaveLength(3);
   });
 
+  test("a municipality admin can hide a report and restore it, through the status rules' own audit", async ({ page, staff }) => {
+    const { writes } = staff;
+    await page.goto("/admin#/reports/active");
+    await page.locator(".adm-table tbody .adm-link").first().click();
+    const drawer = page.getByRole("dialog");
+    await expect(drawer.getByRole("heading", { level: 3, name: "History" })).toBeVisible();
+    await expect(drawer.getByRole("heading", { level: 3, name: "Public site" })).toBeVisible();
+    await drawer.getByRole("button", { name: "Hide from public site" }).click();
+    // a reason is needed
+    await drawer.getByRole("button", { name: "Confirm hide" }).click();
+    await expect(drawer.getByText("Choose a reason.")).toBeVisible();
+    expect(writes).toHaveLength(0);
+    await drawer.getByLabel("Reason").selectOption("spam");
+    await drawer.getByLabel("Note (optional)").fill("Not a real report");
+    await drawer.getByRole("button", { name: "Confirm hide" }).click();
+    await expect(drawer.getByText("Hidden from the public site.")).toBeVisible();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({ method: "PATCH", body: { is_deleted: true, invalid_reason: "spam", admin_note: "Not a real report" } });
+    expect(Object.keys(writes[0].body).sort()).toEqual(["admin_note", "invalid_reason", "is_deleted"]);
+    expect(writes[0].path).toMatch(/^\/rest\/v1\/reports\?id=eq\.[0-9a-f-]{36}$/);
+  });
+
+  test("a hidden report shows Restore in the drawer, for a municipality admin too", async ({ page, staff }) => {
+    const { writes } = staff;
+    // the same report, as the server would answer if it were hidden
+    await page.route("**/api/admin/rest", async route => {
+      const envelope = JSON.parse(route.request().postData() || "{}");
+      if (envelope.method === "GET" && /select=[^&]*description/.test(envelope.path) && /[?&]id=eq\./.test(envelope.path) && /reports\?/.test(envelope.path)) {
+        try {
+          const response = await route.fetch();
+          const rows = await response.json();
+          if (rows[0]) rows[0] = { ...rows[0], is_deleted: true, status: "verified", invalid_reason: "spam" };
+          return await route.fulfill({ response, json: rows });
+        } catch {
+          return; // the test ended while this was in flight
+        }
+      }
+      return route.fallback();
+    });
+    await page.goto("/admin#/reports/active");
+    await page.locator(".adm-table tbody .adm-link").first().click();
+    const drawer = page.getByRole("dialog");
+    await expect(drawer.getByText("This report is hidden from the public site. Nothing is deleted: restoring puts it back.")).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "Hide from public site" })).toHaveCount(0);
+    await expect(drawer.getByRole("button", { name: "Mark cleaned" })).toHaveCount(0); // nothing else to do while hidden
+    await drawer.getByRole("button", { name: "Restore to public site" }).click();
+    await drawer.getByLabel("Note (optional)").fill("Hidden by mistake");
+    await drawer.getByRole("button", { name: "Confirm restore" }).click();
+    await expect(drawer.getByText("Restored to the public site.")).toBeVisible();
+    expect(writes).toHaveLength(1);
+    expect(writes[0].body).toEqual({ is_deleted: false, invalid_reason: null, admin_note: "Hidden by mistake" });
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
   test("the proxy refuses a municipality, a window or a month it does not allow", async ({ page }) => {
     await page.goto("/admin");
     const post = (path, body) => proxy(page, { path, method: "POST", body });

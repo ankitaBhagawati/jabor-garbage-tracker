@@ -52,8 +52,9 @@ const TABLES = {
     body: {
       // Legacy admin screen: hide and restore (is_deleted), approve a proof (status), and the T5 actions.
       super_admin: ["status", "is_deleted", "ward_id", "assigned_to_text", "due_at", "cleaned_by_name", "cleaned_by_type", "cleaned_at", "invalid_reason", "admin_note", "updated_at"],
-      // Status, ward and note, plus the fields the status trigger demands with a status change.
-      municipality_admin: ["status", "ward_id", "admin_note", "invalid_reason", "cleaned_by_name", "cleaned_by_type", "cleaned_at"],
+      // Status, ward and note, plus the fields the status trigger demands with a status change, and is_deleted to
+      // hide or unhide a report of their municipality (a soft hide, recorded with a reason; never a delete).
+      municipality_admin: ["status", "ward_id", "admin_note", "invalid_reason", "cleaned_by_name", "cleaned_by_type", "cleaned_at", "is_deleted"],
     },
     scope: { municipality_admin: "municipality_id" },
   },
@@ -304,6 +305,7 @@ export function authorize(staff, request) {
       if (typeof v === "string" && v.length > 2000) deny("body-value");
     }
     if (data.status !== undefined && !table.statuses.has(data.status)) deny("body-status");
+    if (data.is_deleted !== undefined && typeof data.is_deleted !== "boolean") deny("body-is-deleted");
     if (data.cleaned_by_type != null && !CLEANED_BY.has(data.cleaned_by_type)) deny("body-cleaned-by");
     if (data.ward_id != null && !UUID.test(String(data.ward_id))) deny("body-ward");
     body = JSON.stringify(data);
