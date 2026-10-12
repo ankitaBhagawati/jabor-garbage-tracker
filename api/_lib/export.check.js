@@ -8,7 +8,7 @@ process.env.SUPABASE_ANON_KEY = "anon-key-for-tests";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-key-for-tests";
 
 const { csvCell, toCsv, plainDescription } = await import("../../src/admin/csv.js");
-const { default: exportHandler, MAX_ROWS, HEADER } = await import("../admin/export.js");
+const { default: exportHandler, MAX_ROWS, HEADER, AUDIT_HEADER } = await import("../admin/export.js");
 
 // ── CSV rules ────────────────────────────────────────────────────────────────
 for (const lead of ["=", "+", "-", "@", "\t", "\r"]) assert.equal(csvCell(`${lead}1+1`).replace(/^"|"$/g, "").startsWith("'" + lead), true, `a cell starting with ${JSON.stringify(lead)} is prefixed`);
@@ -54,7 +54,8 @@ globalThis.fetch = async (url, init = {}) => {
   if (url.endsWith("/auth/v1/user")) return account ? json(account.user) : json({}, 401);
   if (url.includes("/rest/v1/staff_profiles?")) return json(account ? [account.profile] : []);
   calls.push({ url, init, token });
-  if (url.includes("/rest/v1/audit_log")) return auditFails ? json({ message: "boom" }, 500) : new Response(null, { status: 201 });
+  if (url.includes("/rest/v1/audit_log") && init.method === "POST") return auditFails ? json({ message: "boom" }, 500) : new Response(null, { status: 201 });
+  if (url.includes("/rest/v1/audit_log")) return auditList(new URL(url));
   if (url.includes("/rest/v1/wards")) return json([{ id: W1, number: 7, name: null }]);
   if (url.includes("/rest/v1/municipalities")) return json([{ id: M1, settings: { overdue_after_days: 7 } }]);
   if (url.includes("/rest/v1/reports")) {
@@ -68,6 +69,28 @@ globalThis.fetch = async (url, init = {}) => {
     return json(rows, 200, { "content-range": `${offset}-${offset + rows.length - 1}/${total}` });
   }
   return json({}, 404);
+};
+
+// ── a small audit_log: the stub applies the same filters Postgrest would ─────
+const AUDIT = [];
+const addAudit = (n, extra) => AUDIT.push({ id: n, municipality_id: M1, entity_type: "report", entity_id: `r${n}`, actor_email: "jmb@example.test", action: "status_change", from_value: { status: "verified" }, to_value: { status: "cleaned" }, note: null, created_at: new Date(Date.UTC(2026, 9, 1, 10, 0, 0) + n * 3600_000).toISOString(), ...extra });
+for (let n = 1; n <= 40; n++) addAudit(n, n % 4 === 0 ? { action: "ward_change" } : n % 7 === 0 ? { actor_email: "public", action: "report_created", to_value: { source: "public" } } : {});
+for (let n = 41; n <= 50; n++) addAudit(n, { municipality_id: M2, actor_email: "other@example.test" });
+addAudit(51, { note: "=HYPERLINK(\"http://evil\") ring 98765 43210", to_value: { status: "cleaned", cleaned_by_name: "Ravi Kumar", phone: "9876543210", lat: 26.75, lng: 94.2, admin_note: "mail me at a.b@example.com" } });
+addAudit(52, { entity_type: "staff_member", entity_id: "u1", actor_email: "owner@example.test", action: "staff_account_created", from_value: null, to_value: { email: "new.admin@example.test", role: "municipality_admin" } });
+let auditBulk = null; // set to a number to pretend the log is that long
+const auditList = url => {
+  const q = url.searchParams;
+  const gte = /created_at\.gte\.([^,)]+)/.exec(q.get("and") || "")?.[1], lte = /created_at\.lte\.([^,)]+)/.exec(q.get("and") || "")?.[1];
+  const actor = /^ilike\.\*(.*)\*$/.exec(q.get("actor_email") || "")?.[1];
+  let rows = auditBulk ? Array.from({ length: auditBulk }, (_, i) => ({ ...AUDIT[0], id: auditBulk - i, created_at: new Date(Date.UTC(2026, 9, 1) + (auditBulk - i) * 1000).toISOString() })) : AUDIT.filter(r =>
+    (!q.get("municipality_id") || q.get("municipality_id") === `eq.${r.municipality_id}`) &&
+    (!q.get("action") || q.get("action") === `eq.${r.action}`) && (!q.get("entity_type") || q.get("entity_type") === `eq.${r.entity_type}`) &&
+    (!actor || r.actor_email.toLowerCase().includes(actor.toLowerCase())) && (!gte || r.created_at >= gte) && (!lte || r.created_at <= lte));
+  rows = [...rows].sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : b.id - a.id));
+  const offset = Number(q.get("offset") || 0), limit = Number(q.get("limit") || 1000);
+  const page = rows.slice(offset, offset + limit);
+  return json(page, 200, { "content-range": `${offset}-${offset + page.length - 1}/${rows.length}` });
 };
 const makeRes = () => {
   const res = { statusCode: 200, headers: {}, body: null };
@@ -88,7 +111,7 @@ const origError = console.error, origWarn = console.warn;
 console.error = () => {};
 console.warn = () => {};
 const AND = "and=(status.in.(verified,pending),created_at.gte.2026-09-01T00:00:00.000Z)";
-const auditOf = out => out.calls.filter(c => c.url.includes("/audit_log"));
+const auditOf = out => out.calls.filter(c => c.url.includes("/audit_log") && c.init.method === "POST");
 
 // a municipality admin: scope added by the server, fixed columns, the audit row, the file
 let out = await run("t-muni", { path: `/rest/v1/reports?${AND}` });
@@ -177,6 +200,122 @@ assert.equal(out.status, 500);
 assert.equal(typeof out.body, "object");
 assert.ok(!out.headers["Content-Disposition"], "no file is sent");
 auditFails = false;
+
+
+// ═══ The audit log export ════════════════════════════════════════════════════
+const AUDIT_PATH = filters => `/rest/v1/audit_log${filters ? `?${filters}` : ""}`;
+const csvLines = out => out.body.replace(BOM, "").split("\r\n").filter(Boolean);
+const listCount = async (token, filters) => { // what the Audit log tab's list says: the same request with count=exact
+  const { authorize } = await import("./access.js");
+  const staff = token === "t-muni" ? { role: "municipality_admin", userId: U_MUNI, municipalityId: M1 } : { role: "super_admin", userId: U_SUPER, municipalityId: null };
+  const plan = authorize(staff, { path: `/rest/v1/audit_log?select=id&${filters}${filters ? "&" : ""}limit=1`, method: "GET", prefer: "count=exact" });
+  const res = await globalThis.fetch(`http://supabase.test${plan.path}`, { headers: { Authorization: `Bearer ${token}` } });
+  return Number(/\/(\d+)$/.exec(res.headers.get("content-range"))[1]);
+};
+
+// every filter the Audit log tab sends, alone and together: the file has exactly as many rows as the list
+const FILTERS = [
+  "", "action=eq.ward_change", "actor_email=ilike.*public*", "actor_email=ilike.*JMB*", "entity_type=eq.staff_member",
+  `and=${encodeURIComponent("(created_at.gte.2026-10-01T20:00:00.000Z,created_at.lte.2026-10-02T10:00:00.000Z)")}`,
+  `and=${encodeURIComponent("(created_at.gte.2026-10-02T00:00:00.000Z)")}`,
+  `and=${encodeURIComponent("(created_at.lte.2026-10-01T15:00:00.000Z)")}&action=eq.status_change`,
+  "action=eq.status_change&actor_email=ilike.*jmb*", "action=eq.nothing_like_this",
+];
+for (const token of ["t-muni", "t-super"]) {
+  for (const filters of FILTERS) {
+    const expected = await listCount(token, filters);
+    out = await run(token, { type: "audit_log", path: AUDIT_PATH(filters) });
+    assert.equal(out.status, 200, `${token} ${filters}`);
+    assert.equal(csvLines(out).length - 1, expected, `${token} [${filters}]: the file has the list's row count`);
+    assert.equal(out.headers["X-Row-Count"], String(expected));
+    assert.equal(out.headers["X-Truncated"], "false");
+    assert.deepEqual(csvLines(out)[0].split(","), AUDIT_HEADER);
+  }
+}
+assert.deepEqual(AUDIT_HEADER, ["id", "date", "actor", "action", "entity_type", "entity_id", "details", "note"]);
+
+// no filters: everything the caller may see. A municipality admin: only their municipality. A super admin: all of it.
+out = await run("t-muni", { type: "audit_log", path: AUDIT_PATH("") });
+assert.equal(csvLines(out).length - 1, AUDIT.filter(r => r.municipality_id === M1).length);
+assert.equal(new URL(out.calls.find(c => c.url.includes("/audit_log") && c.init.method !== "POST").url).searchParams.get("municipality_id"), `eq.${M1}`, "the server adds the scope");
+assert.ok(!csvLines(out).some(l => l.includes("other@example.test")), "nothing from another municipality");
+out = await run("t-super", { type: "audit_log", path: AUDIT_PATH("") });
+assert.equal(csvLines(out).length - 1, AUDIT.length);
+out = await run("t-super", { type: "audit_log", path: AUDIT_PATH(`municipality_id=eq.${M2}`) });
+assert.equal(csvLines(out).length - 1, 10, "a super admin may narrow to one municipality");
+// a municipality admin cannot name one, and the read goes out with their own token (row level security applies)
+out = await run("t-muni", { type: "audit_log", path: AUDIT_PATH(`municipality_id=eq.${M2}`) });
+assert.equal(out.status, 403);
+assert.equal(auditOf(out).length, 0);
+out = await run("t-muni", { type: "audit_log", path: AUDIT_PATH("") });
+assert.equal(out.calls.find(c => c.url.includes("/audit_log") && c.init.method !== "POST").token, "t-muni");
+
+// only the filters: no columns, paging, ordering, other tables or other keys
+for (const body of [
+  { type: "audit_log", path: "/rest/v1/audit_log?select=*" }, { type: "audit_log", path: "/rest/v1/audit_log?select=actor_id" }, { type: "audit_log", path: "/rest/v1/audit_log?limit=99999" },
+  { type: "audit_log", path: "/rest/v1/audit_log?offset=1" }, { type: "audit_log", path: "/rest/v1/audit_log?order=id" }, { type: "audit_log", path: "/rest/v1/audit_log?entity_id=eq.x" },
+  { type: "audit_log", path: "/rest/v1/audit_log?action=eq.a&action=eq.b" }, { type: "audit_log", path: "/rest/v1/reports" }, { type: "reports", path: "/rest/v1/audit_log" },
+  { type: "audit_log", path: "/rest/v1/audit_log_x" }, { type: "audit_log", path: "/rest/v1/audit_log/x" }, { type: "audit", path: "/rest/v1/audit_log" }, { type: "constructor", path: "/rest/v1/audit_log" },
+  { type: ["audit_log"], path: "/rest/v1/audit_log" }, { type: "audit_log", path: "/rest/v1/audit_log", role: "super_admin" }, { type: null, path: "/rest/v1/audit_log" },
+]) {
+  out = await run("t-super", body);
+  assert.equal(out.status, 400, JSON.stringify(body));
+  assert.equal(auditOf(out).length, 0);
+}
+out = await run("t-muni", { type: "audit_log", path: AUDIT_PATH("and=(embedding.eq.1)") });
+assert.equal(out.status, 403, "a filter on a column nobody may filter by is refused");
+out = await run(undefined, { type: "audit_log", path: AUDIT_PATH("") });
+assert.equal(out.status, 401);
+
+// what is in the file: staff emails stay, citizens' details and coordinates never do, formulas are neutralised
+out = await run("t-super", { type: "audit_log", path: AUDIT_PATH("") });
+const text = out.body;
+assert.doesNotMatch(text, /Ravi Kumar|9876543210|98765 43210|a\.b@example\.com|26\.75|94\.2|"lat"|"lng"|actor_id|ip_address/, "no citizen details, coordinates or ids of people");
+assert.match(text, /owner@example\.test/, "the staff actor's email is kept");
+assert.match(text, /new\.admin@example\.test/, "a staff account's own email is kept");
+assert.match(text, /'=HYPERLINK/, "a note that starts with = is neutralised");
+assert.match(text, /\[phone removed\]/);
+assert.ok(!text.split("\r\n").some(line => /^[=+\-@]/.test(line.split(",")[6] ?? "")), "no cell starts with a formula character");
+
+// the export itself is logged with its filters; a municipality admin's row carries their municipality
+out = await run("t-muni", { type: "audit_log", path: AUDIT_PATH("action=eq.ward_change&actor_email=ilike.*jmb*") });
+let logged = JSON.parse(auditOf(out)[0].init.body);
+assert.deepEqual([logged.entity_type, logged.entity_id, logged.action, logged.actor_id, logged.actor_email, logged.municipality_id], ["export", "audit_log", "export", U_MUNI, "jmb@example.test", M1]);
+assert.equal(logged.to_value.type, "audit_log");
+assert.equal(logged.to_value.rows, csvLines(out).length - 1);
+assert.equal(logged.to_value.truncated, false);
+assert.match(logged.to_value.filters, /action=eq\.ward_change/);
+assert.match(logged.to_value.filters, /actor_email=ilike/);
+assert.equal(auditOf(out).length, 1);
+
+// the cap: the newest 10,000 rows, and the file name and headers say it was cut
+auditBulk = MAX_ROWS + 5;
+out = await run("t-super", { type: "audit_log", path: AUDIT_PATH("") });
+assert.equal(out.status, 200);
+assert.equal(csvLines(out).length - 1, MAX_ROWS);
+assert.equal(out.headers["X-Truncated"], "true");
+assert.equal(out.headers["X-Total-Rows"], String(MAX_ROWS + 5));
+assert.match(out.headers["Content-Disposition"], /-first-10000\.csv"$/);
+assert.equal(csvLines(out)[1].split(",")[0], String(MAX_ROWS + 5), "the newest row comes first");
+assert.equal(out.calls.filter(c => c.url.includes("/audit_log") && c.init.method !== "POST").length, 10, "ten reads of a thousand");
+logged = JSON.parse(auditOf(out)[0].init.body);
+assert.deepEqual([logged.to_value.rows, logged.to_value.total, logged.to_value.truncated], [MAX_ROWS, MAX_ROWS + 5, true]);
+auditBulk = MAX_ROWS;
+out = await run("t-super", { type: "audit_log", path: AUDIT_PATH("") });
+assert.equal(out.headers["X-Truncated"], "false", "exactly the cap is not truncated");
+auditBulk = null;
+
+// not logged, not delivered
+auditFails = true;
+out = await run("t-super", { type: "audit_log", path: AUDIT_PATH("") });
+assert.equal(out.status, 500);
+assert.ok(!out.headers["Content-Disposition"]);
+auditFails = false;
+
+// the reports export still works with no type
+out = await run("t-muni", { path: "/rest/v1/reports" });
+assert.equal(out.status, 200);
+assert.deepEqual(csvLines(out)[0].split(","), HEADER);
 
 console.warn = origWarn;
 console.error = origError;

@@ -162,3 +162,18 @@ either result.
 | `monthly_ward_report`, `ward_hotspots` through the proxy | yes, names the municipality | yes, own municipality only | no (no session) |
 | The same functions called directly in Supabase | yes | own municipality only | permission denied |
 | `POST /api/admin/export` | yes | own municipality only | 401 |
+
+## 9. Staff management and the audit log export
+
+Dedicated routes outside the proxy, super admin only (details: `docs/STAFF-MANAGEMENT.md`). The proxy allowlist is unchanged.
+
+| Route | super_admin | municipality_admin | anon |
+|---|---|---|---|
+| `GET /api/admin/staff` (list) | yes | 403 | 401 |
+| `POST /api/admin/staff` (create a municipality admin; role fixed by the server) | yes | 403 | 401 |
+| `POST /api/admin/staff/status` (switch a municipality admin on or off) | yes (not yourself) | 403 | 401 |
+| `POST /api/admin/export` with `type: "audit_log"` | all rows, or one municipality by filter | own municipality only (naming one is 403) | 401 |
+
+Inactive staff, a missing profile, a token and profile that disagree, and a role such as `authenticated` get 403, as
+for the proxy. Creating accounts uses the Auth admin API with the service role key, on the server only. Create and
+status changes are limited to 10 per hour per actor and fail closed if Redis is unreachable.
