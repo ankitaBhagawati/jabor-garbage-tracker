@@ -1780,8 +1780,8 @@ export default function Jabor() {
         </div>
       )}
 
-      {/* HEADER */}
-      <header className="top-appbar">
+      {/* HEADER (the admin area has its own header) */}
+      {view !== "admin" && <header className="top-appbar">
         <div className="top-appbar-inner">
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <button className="icon-action" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
@@ -1796,7 +1796,7 @@ export default function Jabor() {
             </button>
           </div>
         </div>
-      </header>
+      </header>}
 
       {drawerOpen && (
         <div className="drawer-overlay" onClick={() => setDrawerOpen(false)}>

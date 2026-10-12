@@ -340,11 +340,19 @@ test.describe("municipality admin", () => {
     await expect(page.getByRole("heading", { level: 2 })).toHaveText("Dashboard");
     const menu = page.getByRole("button", { name: "Menu", exact: true });
     await expect(menu).toHaveAttribute("aria-expanded", "true");
+    // on a wide screen the toggle is the sidebar's own, at its top; collapsing leaves a narrow rail of icons
+    expect((await menu.boundingBox()).y - (await side.boundingBox()).y).toBeLessThan(16);
+    const wide = (await side.boundingBox()).width;
     await menu.click();
-    await expect(side).toBeHidden();
     await expect(menu).toHaveAttribute("aria-expanded", "false");
-    await menu.click();
     await expect(side).toBeVisible();
+    expect((await side.boundingBox()).width).toBeLessThan(wide / 2);
+    await expect(side.getByRole("link", { name: "Dashboard" })).toBeVisible(); // still reachable, by its icon
+    await side.getByRole("link", { name: "Reports" }).click();
+    await expect(page.getByRole("heading", { level: 2 })).toHaveText("Reports");
+    await menu.click();
+    await expect(menu).toHaveAttribute("aria-expanded", "true");
+    expect((await side.boundingBox()).width).toBeGreaterThan(wide - 4);
   });
 
   test("a status change sends one update through the status rules", async ({ page, staff }) => {
@@ -553,6 +561,30 @@ test.describe("municipality admin", () => {
     expect((await fs.readFile(await file.path(), "utf8")).replace(BOM, "").split("\r\n")[0]).toBe("rank,ward,reports_in_window,active,overdue,repeat_locations,average_days_to_clean,score,small_sample");
   });
 
+
+
+  test("one header, no public header; the profile icon and its role label are at the top right", async ({ page }) => {
+    await page.goto("/admin");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Jabor - Jorhat Municipal Board admin");
+    // the public site's header (logo bar with its own menu button) is not on /admin
+    await expect(page.locator("header.top-appbar")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open menu" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Go to dashboard" })).toHaveCount(0);
+    await expect(page.locator("header:visible")).toHaveCount(1);
+    // exactly one menu button: the sidebar's, at the top of the sidebar
+    await expect(page.getByRole("button", { name: "Menu", exact: true })).toHaveCount(1);
+    // the role label sits under the profile icon, at the right edge of the header
+    const icon = await page.getByRole("button", { name: "Account" }).boundingBox();
+    const label = page.locator(".adm-role-label");
+    await expect(label).toHaveText("JMB Admin");
+    const labelBox = await label.boundingBox();
+    expect(labelBox.y).toBeGreaterThanOrEqual(icon.y + icon.height - 6);
+    expect(Math.abs(labelBox.x + labelBox.width / 2 - (icon.x + icon.width / 2))).toBeLessThan(30);
+    expect(icon.x + icon.width).toBeGreaterThan(1280 - 220);
+    // a plain header: no card around it, a thin line under it
+    const style = await page.locator(".adm-bar").evaluate(el => { const c = getComputedStyle(el); return { top: c.borderTopWidth, bottom: c.borderBottomWidth, radius: c.borderTopLeftRadius, background: c.backgroundColor }; });
+    expect(style).toMatchObject({ top: "0px", bottom: "1px", radius: "0px" });
+  });
 
   test("does not see Municipal admins, and is sent to the Dashboard from its address", async ({ page, staff }) => {
     const asked = [];
@@ -809,6 +841,17 @@ test.describe("owner", () => {
     expect(staff.staffApi.calls[1].body).toEqual({ user_id: "aaaaaaaa-0000-4000-8000-000000000002", is_active: true });
   });
 
+
+  test("[super] the header says Super admin, with Super Admin under the profile icon", async ({ page }) => {
+    await page.goto("/admin");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Jabor - Super admin");
+    await expect(page.locator(".adm-role-label")).toHaveText("Super Admin");
+    await expect(page.locator("header.top-appbar")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Menu", exact: true })).toHaveCount(1);
+    await page.getByRole("button", { name: "Account" }).click();
+    await expect(page.getByRole("dialog", { name: "Account" })).toContainText("Super admin");
+  });
+
   test("[super] chooses a municipality and keeps the older screens", async ({ page }) => {
     await page.goto("/admin");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Jabor - Super admin");
@@ -864,6 +907,63 @@ test.describe("municipality admin on a 360px phone", () => {
     await expect(side).toBeHidden();
   });
 
+
+  test("one header with one menu button; the title wraps; the role label is under the profile icon", async ({ page }) => {
+    await page.goto("/admin");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Jabor - Jorhat Municipal Board admin");
+    // the public header is absent, so there is one header and one hamburger, closed and open
+    await expect(page.locator("header.top-appbar")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open menu" })).toHaveCount(0);
+    await expect(page.locator("header:visible")).toHaveCount(1);
+    const menu = page.getByRole("button", { name: "Menu", exact: true });
+    await expect(menu).toHaveCount(1);
+    await menu.click();
+    await expect(page.getByRole("button", { name: "Menu", exact: true })).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    // a simple three-line icon button with a 44px target: no border, no card
+    const box = await menu.boundingBox();
+    expect([box.width, box.height]).toEqual([44, 44]);
+    expect(await menu.evaluate(el => getComputedStyle(el).borderTopWidth)).toBe("0px");
+    const bar = await page.locator(".adm-bar").evaluate(el => { const c = getComputedStyle(el); return { top: c.borderTopWidth, bottom: c.borderBottomWidth, radius: c.borderTopLeftRadius }; });
+    expect(bar).toEqual({ top: "0px", bottom: "1px", radius: "0px" });
+    // the title is whole: it wraps onto a second line, never cut with an ellipsis
+    const title = page.getByRole("heading", { level: 1 });
+    const fit = await title.evaluate(el => ({ overflow: getComputedStyle(el).textOverflow, clipped: el.scrollWidth > el.clientWidth + 1, lines: Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)) }));
+    expect(fit.overflow).not.toBe("ellipsis");
+    expect(fit.clipped).toBe(false);
+    expect(fit.lines).toBeGreaterThanOrEqual(2);
+    // right side: the menu button, then the profile icon with its label under it
+    const account = await page.getByRole("button", { name: "Account" }).boundingBox();
+    expect(account.x).toBeGreaterThan(box.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(account.x + 4);
+    expect(account.x + account.width).toBeLessThanOrEqual(360);
+    await expect(page.locator(".adm-role-label")).toHaveText("JMB Admin");
+    expect((await page.locator(".adm-role-label").boundingBox()).y).toBeGreaterThanOrEqual(account.y + account.height - 6);
+    // the popover still shows the email and role, and sign out
+    await page.getByRole("button", { name: "Account" }).click();
+    const popover = page.getByRole("dialog", { name: "Account" });
+    await expect(popover).toContainText(JMB.email);
+    await expect(popover).toContainText("Municipality admin");
+    await expect(popover.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(popover).toHaveCount(0);
+  });
+
+  test("no page runs off the side at 360px", async ({ page }) => {
+    for (const hash of ["dashboard", "reports", "reports/unassigned", "reports/hidden", "hotspots", "monthly", "audit"]) {
+      await page.goto(`/admin#/${hash}`);
+      await expect(page.locator(".adm-pagehead")).toBeVisible();
+      await page.waitForTimeout(400); // let the page's data arrive
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `#/${hash}`).toBe(true);
+      await page.reload();
+      await expect(page.locator(".adm-pagehead")).toBeVisible();
+    }
+    await page.goto("/admin#/reports");
+    await page.locator(".adm-table tbody .adm-link").first().click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "the report drawer").toBe(true);
+  });
+
   test("the header, user icon and segmented tabs fit and work", async ({ page }) => {
     await page.goto("/admin#/reports");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Jorhat");
@@ -886,6 +986,20 @@ test.describe("municipality admin on a 360px phone", () => {
 test.describe("owner on a 360px phone", () => {
   test.skip(needsSuper, "E2E_SUPER_EMAIL and E2E_SUPER_PASSWORD are not set");
   test.use(PHONE);
+
+  test("[super] one hamburger, a wrapped title, the Super Admin label, and no page runs off the side", async ({ page }) => {
+    await page.goto("/admin");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Jabor - Super admin");
+    await expect(page.locator(".adm-role-label")).toHaveText("Super Admin");
+    await expect(page.locator("header.top-appbar")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Menu", exact: true })).toHaveCount(1);
+    for (const hash of ["dashboard", "reports", "hotspots", "monthly", "audit", "admins", "reports/hidden"]) {
+      await page.goto(`/admin#/${hash}`);
+      await expect(page.locator(".adm-pagehead")).toBeVisible();
+      await page.waitForTimeout(400);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `#/${hash}`).toBe(true);
+    }
+  });
 
   test("[super] Municipal admins fits and works on a phone", async ({ page, staff }) => {
     await page.goto("/admin");
