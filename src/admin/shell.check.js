@@ -28,11 +28,14 @@ assert.ok(N.navFor("municipality_admin").some(i => i.id === "only-municipality")
 assert.ok(!N.navFor("super_admin").some(i => i.id === "only-municipality"));
 N.NAV.pop();
 
-// ── The header ───────────────────────────────────────────────────────────────
-assert.equal(N.headerTitle("municipality_admin", "Jorhat Municipal Board"), "Jabor - Jorhat Municipal Board admin");
-assert.equal(N.headerTitle("super_admin", "Jorhat Municipal Board"), "Jabor - Super admin");
-assert.equal(N.headerTitle("municipality_admin", undefined), "Jabor - Your municipality admin");
-for (const text of [N.headerTitle("super_admin", ""), ...Object.values(N.ROLE_LABEL)]) assert.ok(!text.includes("—") && !text.includes("–"), "no dashes in UI text");
+// ── The header shows the page the person is on ──────────────────────────────
+for (const role of ["super_admin", "municipality_admin"]) {
+  const labels = N.navFor(role).map(i => i.label);
+  assert.ok(labels.every(l => l && !/[\u2013\u2014]/.test(l)), "page names are plain text");
+  assert.equal(N.navFor(role).find(i => i.id === "dashboard").label, "Dashboard");
+  assert.equal(N.navFor(role).find(i => i.id === "reports").label, "Reports");
+}
+assert.equal(N.headerTitle, undefined, "the municipality name is no longer in the title");
 
 // ── The label under the profile icon ─────────────────────────────────────────
 assert.equal(N.roleBadge("super_admin"), "Super Admin");

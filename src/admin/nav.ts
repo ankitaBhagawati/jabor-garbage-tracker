@@ -23,10 +23,6 @@ export const navFor = (role: Role, extra: { id: string; label: string }[] = []):
 
 export const ROLE_LABEL: Record<Role, string> = { super_admin: "Super admin", municipality_admin: "Municipality admin" };
 
-// The header: "Jabor - Jorhat Municipal Board admin" or "Jabor - Super admin".
-export const headerTitle = (role: Role, municipalityName: string | null | undefined) =>
-  role === "super_admin" ? "Jabor - Super admin" : `Jabor - ${municipalityName || "Your municipality"} admin`;
-
 // The short name of a municipality, for the label under the profile icon ("JMB"). A municipality record may carry
 // settings.short_name; the table has no column for it yet, so this small list is the fallback.
 const SHORT_NAMES: Record<string, string> = { jorhat: "JMB", "Jorhat Municipal Board": "JMB" };

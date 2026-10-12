@@ -156,7 +156,7 @@
 @page { size: A4 landscape; margin: 12mm; }
 @media print {
   body { background: #fff !important; }
-  header, footer, .adm-bar, .adm-muni-bar, .adm-side, .adm-backdrop, .adm-pagehead, .adm-noprint, .adm-drawer, .adm-export, dialog { display: none !important; }
+  header, footer, .adm-bar, .adm-muni-bar, .adm-side, .adm-backdrop, .adm-noprint, .adm-drawer, .adm-export, dialog { display: none !important; }
   .adm { padding: 0 !important; max-width: none !important; }
   .adm-panel { border: 0 !important; box-shadow: none !important; padding: 0 !important; background: #fff !important; }
   .adm-print-title { display: block; margin-bottom: 10px; }
@@ -172,7 +172,7 @@
 /* ── Shell: header, sidebar, page ─────────────────────────────────────── */
 /* one plain header: the menu button, then the title (it wraps, never cut with an ellipsis), then the profile icon on the right */
 .adm-bar { display: flex; align-items: flex-start; gap: 4px; margin: 0 0 12px; padding: 4px 0 8px; border-bottom: 1px solid var(--adm-line); }
-.adm-title { flex: 1 1 auto; min-width: 0; margin: 0; padding-top: 10px; font-size: 18px; font-weight: 900; letter-spacing: -0.02em; line-height: 1.25; overflow-wrap: anywhere; }
+.adm-title { flex: 1 1 auto; min-width: 0; margin: 0; padding-top: 10px; font-size: 20px; font-weight: 900; letter-spacing: -0.02em; line-height: 1.25; overflow-wrap: anywhere; }
 .adm-bar-right { display: flex; align-items: flex-start; gap: 0; flex: none; }
 .adm-iconbtn { width: 44px; height: 44px; display: grid; place-items: center; flex: none; background: transparent; border: 0; border-radius: 8px; color: var(--adm-ink); cursor: pointer; padding: 0; }
 .adm-iconbtn:hover { background: var(--adm-soft); }
@@ -188,7 +188,6 @@
 .adm-navitem:hover { background: var(--adm-soft); color: var(--adm-ink); }
 .adm-navitem.is-on { background: var(--adm-green); color: #fff; }
 .adm-main { min-width: 0; }
-.adm-pagehead { font-size: 22px; font-weight: 900; letter-spacing: -0.03em; margin: 0 0 12px; }
 
 /* wide screens: the sidebar is always there, with its own toggle at the top; collapsed it is a narrow rail of icons */
 @media (min-width: 900px) {

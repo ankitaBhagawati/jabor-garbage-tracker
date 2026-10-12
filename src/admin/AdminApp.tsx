@@ -6,7 +6,7 @@ import Dashboard from "./Dashboard.tsx";
 import Hotspots from "./Hotspots.tsx";
 import MonthlyReport from "./MonthlyReport.tsx";
 import { Icon } from "./icons.tsx";
-import { headerTitle, navFor, roleBadge } from "./nav.ts";
+import { navFor, roleBadge } from "./nav.ts";
 import Reports from "./Reports.tsx";
 import StaffAdmin from "./StaffAdmin.tsx";
 import { DEFAULT_ROUTE, formatRoute, parseRoute, type Route } from "./route.ts";
@@ -109,7 +109,6 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
 
   const wardList = wards.data ?? [];
   const current = items.find(item => item.id === route.page) ?? items[0];
-  const title = headerTitle(session.role, municipality?.name ?? session.municipality?.name);
   const badge = roleBadge(session.role, municipality ?? session.municipality);
 
   let body: ReactNode;
@@ -138,7 +137,7 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
         <button ref={menuRef} type="button" className="adm-iconbtn adm-menu-top" aria-label="Menu" aria-expanded={navOpen} aria-controls="adm-sidebar" onClick={() => setNavOpen(o => !o)}>
           <Icon name="menu" size={24} />
         </button>
-        <h1 className="adm-title">{title}</h1>
+        <h1 className="adm-title">{current.label}</h1>
         <div className="adm-bar-right">
           <UserMenu session={session} onSignOut={onSignOut} badge={badge} />
         </div>
@@ -180,7 +179,6 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
         </nav>
 
         <div className="adm-main">
-          <h2 className="adm-pagehead">{current.label}</h2>
           {body}
         </div>
       </div>
