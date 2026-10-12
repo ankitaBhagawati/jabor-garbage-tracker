@@ -134,12 +134,12 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
   return (
     <div className={`adm${navOpen ? " has-nav" : ""}`}>
       <header className="adm-bar">
+        {/* the phone's menu button, left of the title; on a wide screen the sidebar has its own at its top */}
+        <button ref={menuRef} type="button" className="adm-iconbtn adm-menu-top" aria-label="Menu" aria-expanded={navOpen} aria-controls="adm-sidebar" onClick={() => setNavOpen(o => !o)}>
+          <Icon name="menu" size={24} />
+        </button>
         <h1 className="adm-title">{title}</h1>
         <div className="adm-bar-right">
-          {/* the phone's menu button; on a wide screen the sidebar has its own at its top */}
-          <button ref={menuRef} type="button" className="adm-iconbtn adm-menu-top" aria-label="Menu" aria-expanded={navOpen} aria-controls="adm-sidebar" onClick={() => setNavOpen(o => !o)}>
-            <Icon name="menu" size={24} />
-          </button>
           <UserMenu session={session} onSignOut={onSignOut} badge={badge} />
         </div>
       </header>
