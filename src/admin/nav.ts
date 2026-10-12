@@ -26,3 +26,16 @@ export const ROLE_LABEL: Record<Role, string> = { super_admin: "Super admin", mu
 // The header: "Jabor - Jorhat Municipal Board admin" or "Jabor - Super admin".
 export const headerTitle = (role: Role, municipalityName: string | null | undefined) =>
   role === "super_admin" ? "Jabor - Super admin" : `Jabor - ${municipalityName || "Your municipality"} admin`;
+
+// The short name of a municipality, for the label under the profile icon ("JMB"). A municipality record may carry
+// settings.short_name; the table has no column for it yet, so this small list is the fallback.
+const SHORT_NAMES: Record<string, string> = { jorhat: "JMB", "Jorhat Municipal Board": "JMB" };
+export const municipalityCode = (m?: { name?: string | null; slug?: string | null; settings?: object | null } | null): string => {
+  const short = (m?.settings as { short_name?: unknown } | null | undefined)?.short_name;
+  const fromSettings = typeof short === "string" ? short.trim() : "";
+  return fromSettings || SHORT_NAMES[m?.slug ?? ""] || SHORT_NAMES[m?.name ?? ""] || "";
+};
+
+// The small label under the profile icon: "Super Admin", or "JMB Admin" (the fallback is "Municipal Admin").
+export const roleBadge = (role: Role, m?: Parameters<typeof municipalityCode>[0]): string =>
+  role === "super_admin" ? "Super Admin" : municipalityCode(m) ? `${municipalityCode(m)} Admin` : "Municipal Admin";

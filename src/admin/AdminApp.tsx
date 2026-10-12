@@ -6,7 +6,7 @@ import Dashboard from "./Dashboard.tsx";
 import Hotspots from "./Hotspots.tsx";
 import MonthlyReport from "./MonthlyReport.tsx";
 import { Icon } from "./icons.tsx";
-import { headerTitle, navFor } from "./nav.ts";
+import { headerTitle, navFor, roleBadge } from "./nav.ts";
 import Reports from "./Reports.tsx";
 import StaffAdmin from "./StaffAdmin.tsx";
 import { DEFAULT_ROUTE, formatRoute, parseRoute, type Route } from "./route.ts";
@@ -110,6 +110,7 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
   const wardList = wards.data ?? [];
   const current = items.find(item => item.id === route.page) ?? items[0];
   const title = headerTitle(session.role, municipality?.name ?? session.municipality?.name);
+  const badge = roleBadge(session.role, municipality ?? session.municipality);
 
   let body: ReactNode;
   if (municipalities.error) body = <ErrorBox message={municipalities.error} onRetry={municipalities.reload} />;
@@ -133,11 +134,14 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
   return (
     <div className={`adm${navOpen ? " has-nav" : ""}`}>
       <header className="adm-bar">
-        <button ref={menuRef} type="button" className="adm-iconbtn" aria-label="Menu" aria-expanded={navOpen} aria-controls="adm-sidebar" onClick={() => setNavOpen(o => !o)}>
-          <Icon name="menu" size={22} />
-        </button>
         <h1 className="adm-title">{title}</h1>
-        <UserMenu session={session} onSignOut={onSignOut} />
+        <div className="adm-bar-right">
+          {/* the phone's menu button; on a wide screen the sidebar has its own at its top */}
+          <button ref={menuRef} type="button" className="adm-iconbtn adm-menu-top" aria-label="Menu" aria-expanded={navOpen} aria-controls="adm-sidebar" onClick={() => setNavOpen(o => !o)}>
+            <Icon name="menu" size={24} />
+          </button>
+          <UserMenu session={session} onSignOut={onSignOut} badge={badge} />
+        </div>
       </header>
 
       {isSuper && list.length > 0 && (
@@ -153,7 +157,14 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
 
       <div className="adm-shell">
         {!wide && navOpen && <div className="adm-backdrop" aria-hidden="true" onClick={() => setNavOpen(false)} />}
-        <nav id="adm-sidebar" ref={sideRef} className={`adm-side${navOpen ? " is-open" : ""}`} aria-label="Admin sections">
+        <nav id="adm-sidebar" ref={sideRef} className={`adm-side${navOpen ? " is-open" : ""}${wide && !navOpen ? " is-collapsed" : ""}`} aria-label="Admin sections">
+          {/* at the top of the sidebar: collapses it to a narrow rail on a wide screen, closes the drawer on a phone */}
+          <button type="button" className="adm-iconbtn adm-menu-side" aria-label="Menu" aria-expanded={navOpen} aria-controls="adm-sidebar" onClick={() => setNavOpen(o => !o)}>
+            <Icon name="menu" size={24} />
+          </button>
+          <button type="button" className="adm-iconbtn adm-close-side" aria-label="Close menu" onClick={() => { setNavOpen(false); menuRef.current?.focus(); }}>
+            <Icon name="close" size={22} />
+          </button>
           {items.map(item => (
             <a
               key={item.id}

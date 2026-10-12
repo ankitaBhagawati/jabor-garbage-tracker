@@ -34,6 +34,17 @@ assert.equal(N.headerTitle("super_admin", "Jorhat Municipal Board"), "Jabor - Su
 assert.equal(N.headerTitle("municipality_admin", undefined), "Jabor - Your municipality admin");
 for (const text of [N.headerTitle("super_admin", ""), ...Object.values(N.ROLE_LABEL)]) assert.ok(!text.includes("—") && !text.includes("–"), "no dashes in UI text");
 
+// ── The label under the profile icon ─────────────────────────────────────────
+assert.equal(N.roleBadge("super_admin"), "Super Admin");
+assert.equal(N.roleBadge("super_admin", { name: "Jorhat Municipal Board", slug: "jorhat" }), "Super Admin", "the owner's label does not depend on the municipality chosen");
+assert.equal(N.roleBadge("municipality_admin", { name: "Jorhat Municipal Board", slug: "jorhat" }), "JMB Admin");
+assert.equal(N.roleBadge("municipality_admin", { name: "Jorhat Municipal Board", slug: null }), "JMB Admin", "by name when there is no slug");
+assert.equal(N.roleBadge("municipality_admin", { name: "Somewhere Else", slug: "somewhere", settings: { short_name: " SEB " } }), "SEB Admin", "a short_name in the settings wins");
+assert.equal(N.roleBadge("municipality_admin", { name: "Somewhere Else", slug: "somewhere", settings: { short_name: 7 } }), "Municipal Admin", "an unknown municipality falls back");
+assert.equal(N.roleBadge("municipality_admin", null), "Municipal Admin");
+assert.equal(N.roleBadge("municipality_admin"), "Municipal Admin");
+for (const text of ["Super Admin", N.roleBadge("municipality_admin", { name: "Jorhat Municipal Board" }), "Municipal Admin"]) assert.ok(!/[\u2013\u2014]/.test(text), "no dashes in UI text");
+
 // ── Addresses ────────────────────────────────────────────────────────────────
 const D = R.DEFAULT_ROUTE;
 assert.deepEqual(R.parseRoute("", order), D, "no hash: the dashboard");

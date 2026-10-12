@@ -5,7 +5,7 @@ import type { Session } from "./types.ts";
 
 // The user icon in the header. It opens a small popover with who is signed in and the Sign out button.
 // Closes on a press outside, on Esc, and when focus leaves it with Tab.
-export default function UserMenu({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+export default function UserMenu({ session, onSignOut, badge }: { session: Session; onSignOut: () => void; badge: string }) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -30,6 +30,7 @@ export default function UserMenu({ session, onSignOut }: { session: Session; onS
       <button ref={buttonRef} type="button" className="adm-iconbtn" aria-label="Account" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(o => !o)}>
         <Icon name="user" size={22} />
       </button>
+      <span className="adm-role-label">{badge}</span>
       {open && (
         <div id={id} className="adm-popover" role="dialog" aria-label="Account">
           <p className="adm-popover-email" title={session.email}>{session.email}</p>
