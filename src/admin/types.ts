@@ -94,3 +94,6 @@ export type HotspotRow = {
   rank: number;
 };
 export type HotspotWindow = 30 | 60 | 90;
+
+// The segmented tabs of the Reports page. "hidden" shows the Hidden list (restore); the rest are the table.
+export type ReportTab = "all" | "unassigned" | "active" | "in_progress" | "cleaned" | "hidden";

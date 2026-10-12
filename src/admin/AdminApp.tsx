@@ -1,19 +1,23 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import "./admin.css";
 import { adminRequest, onSessionEnded } from "./adminApi.ts";
 import AuditLog from "./AuditLog.tsx";
 import Dashboard from "./Dashboard.tsx";
 import Hotspots from "./Hotspots.tsx";
 import MonthlyReport from "./MonthlyReport.tsx";
-import HiddenReports from "./HiddenReports.tsx";
+import { Icon } from "./icons.tsx";
+import { headerTitle, navFor } from "./nav.ts";
+import Reports from "./Reports.tsx";
+import { DEFAULT_ROUTE, formatRoute, parseRoute, type Route } from "./route.ts";
+import UserMenu from "./UserMenu.tsx";
 import { ErrorBox } from "./Pieces.tsx";
 import { municipalitiesEnvelope, wardsEnvelope, type Scope } from "./queryBuilders.ts";
 import ReportDrawer from "./ReportDrawer.tsx";
-import type { MunicipalityInfo, Session, Ward } from "./types.ts";
+import type { MunicipalityInfo, ReportTab, Session, Ward } from "./types.ts";
 import { useAsync } from "./useAsync.ts";
 import { overdueDaysFrom } from "./format.ts";
 
-// A tab supplied by the page that mounts the app (the older super admin screens).
+// A page supplied by the app that mounts this one (the older owner screens).
 export type ExtraTab = { id: string; label: string; render: (api: { onPhotoClick: (url: string) => void; version: number }) => ReactNode };
 
 type Props = {
@@ -23,19 +27,45 @@ type Props = {
   onChanged?: () => void;
 };
 
-const ROLE_LABEL = { super_admin: "Owner", municipality_admin: "Municipality admin" } as const;
+const WIDE = "(min-width: 900px)";
+const isWide = () => (typeof window.matchMedia === "function" ? window.matchMedia(WIDE).matches : true);
 
-// The admin area: header, the municipality (a super admin chooses one, a municipality admin has one),
-// the tabs, and the report drawer that every tab can open.
+// The admin area: a header with the menu button and the user icon, a sidebar of pages, and the page itself.
+// The page is in the URL hash (#/reports/active), so a refresh stays where it was. The report drawer can be
+// opened from any page.
 export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged }: Props) {
   const isSuper = session.role === "super_admin";
-  const [tab, setTab] = useState("dashboard");
+  const items = useMemo(() => navFor(session.role, extraTabs), [session.role, extraTabs]);
+  const pages = useMemo(() => items.map(item => item.id), [items]);
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash, pages));
+  const [reportsSeq, setReportsSeq] = useState(0); // bumped when something outside the Reports page sends it a new filter
+  const [wide, setWide] = useState(isWide);
+  const [navOpen, setNavOpen] = useState(isWide);
   const [chosen, setChosen] = useState<string>("");
   const [openReport, setOpenReport] = useState<string | null>(null);
   const [photo, setPhoto] = useState("");
   const [version, setVersion] = useState(0);
+  const menuRef = useRef<HTMLButtonElement>(null);
+  const sideRef = useRef<HTMLElement>(null);
 
   useEffect(() => { onSessionEnded(onSignOut); return () => onSessionEnded(null); }, [onSignOut]);
+
+  // The menu is open on a wide screen and a drawer on a phone; crossing the width resets it to that default.
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia(WIDE);
+    const onChange = () => { setWide(query.matches); setNavOpen(query.matches); };
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+
+  // Back and forward, and a hand-edited address, change the page.
+  useEffect(() => {
+    const sync = () => { setRoute(parseRoute(window.location.hash, pages)); setReportsSeq(n => n + 1); };
+    window.addEventListener("popstate", sync);
+    window.addEventListener("hashchange", sync);
+    return () => { window.removeEventListener("popstate", sync); window.removeEventListener("hashchange", sync); };
+  }, [pages]);
 
   const municipalities = useAsync(async () => (await adminRequest<MunicipalityInfo[]>(municipalitiesEnvelope())).data, []);
   const list = municipalities.data ?? [];
@@ -47,59 +77,91 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
   const wards = useAsync(async () => (await adminRequest<Ward[]>(wardsEnvelope(scope))).data, [scope.municipalityId, municipality?.id]);
   const changed = useCallback(() => { setVersion(v => v + 1); onChanged?.(); }, [onChanged]);
 
-  const tabs: { id: string; label: string }[] = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "monthly", label: "Monthly report" },
-    { id: "hotspots", label: "Hotspots" },
-    { id: "audit", label: "Audit log" },
-    { id: "hidden", label: "Hidden" },
-    ...extraTabs.map(({ id, label }) => ({ id, label })),
-  ];
+  // Go to a page. From the menu or a tile this is a new page (the Reports page starts fresh with the filter);
+  // switching tabs inside Reports only changes the address.
+  const go = useCallback((next: Route, options: { fresh?: boolean } = { fresh: true }) => {
+    const hash = formatRoute(next);
+    if (window.location.hash !== hash) window.history.pushState(null, "", `${window.location.pathname}${window.location.search}${hash}`);
+    setRoute(next);
+    if (options.fresh) { setReportsSeq(n => n + 1); setOpenReport(null); }
+  }, []);
+  const choosePage = (id: string) => { go({ ...DEFAULT_ROUTE, page: id }); if (!wide) setNavOpen(false); };
+  const chooseTab = (tab: ReportTab) => go({ ...DEFAULT_ROUTE, page: "reports", tab }, { fresh: false });
+
+  // On a phone the open menu is a drawer: Esc closes it and focus goes back to the button.
+  useEffect(() => {
+    if (wide || !navOpen) return;
+    sideRef.current?.querySelector<HTMLElement>("a")?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setNavOpen(false); menuRef.current?.focus(); } };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [wide, navOpen]);
+
   const wardList = wards.data ?? [];
-  const title = isSuper ? "Admin" : municipality?.name ?? session.municipality?.name ?? "Your municipality";
+  const current = items.find(item => item.id === route.page) ?? items[0];
+  const title = headerTitle(session.role, municipality?.name ?? session.municipality?.name);
 
   let body: ReactNode;
   if (municipalities.error) body = <ErrorBox message={municipalities.error} onRetry={municipalities.reload} />;
   else if (!municipality && municipalities.loading) body = <div className="adm-state" aria-busy="true"><p>Loading…</p></div>;
   else if (!municipality) body = <div className="adm-state"><p>No municipality is set up for this account.</p></div>;
   else if (wards.error) body = <ErrorBox message={wards.error} onRetry={wards.reload} />;
-  else if (tab === "dashboard") body = <Dashboard key={municipality.id} scope={scope} wards={wardList} overdueDays={overdueDays} version={version} onOpenReport={setOpenReport} />;
-  else if (tab === "monthly") body = <MonthlyReport key={municipality.id} scope={scope} municipalityName={municipality.name} overdueDays={overdueDays} version={version} />;
-  else if (tab === "hotspots") body = <Hotspots key={municipality.id} scope={scope} version={version} />;
-  else if (tab === "audit") body = <AuditLog key={municipality.id} scope={scope} wards={wardList} version={version} onOpenReport={setOpenReport} />;
-  else if (tab === "hidden") body = <div className="adm-panel"><HiddenReports key={municipality.id} role={session.role} municipalityId={scope.municipalityId} version={version} onChanged={changed} onPhotoClick={setPhoto} /></div>;
-  else body = <div className="adm-panel">{extraTabs.find(t => t.id === tab)?.render({ onPhotoClick: setPhoto, version })}</div>;
+  else if (route.page === "dashboard") body = <Dashboard key={municipality.id} scope={scope} overdueDays={overdueDays} version={version} onNavigate={go} />;
+  else if (route.page === "reports") body = (
+    <Reports
+      key={`${municipality.id}-${reportsSeq}`} scope={scope} wards={wardList} overdueDays={overdueDays} version={version}
+      tab={route.tab} initial={{ status: route.status, overdue: route.overdue }} role={session.role}
+      onTab={chooseTab} onOpenReport={setOpenReport} onChanged={changed} onPhotoClick={setPhoto}
+    />
+  );
+  else if (route.page === "monthly") body = <MonthlyReport key={municipality.id} scope={scope} municipalityName={municipality.name} overdueDays={overdueDays} version={version} />;
+  else if (route.page === "hotspots") body = <Hotspots key={municipality.id} scope={scope} version={version} />;
+  else if (route.page === "audit") body = <AuditLog key={municipality.id} scope={scope} wards={wardList} version={version} onOpenReport={setOpenReport} />;
+  else body = <div className="adm-panel">{extraTabs.find(t => t.id === route.page)?.render({ onPhotoClick: setPhoto, version })}</div>;
 
   return (
-    <div className="adm">
-      <header className="adm-head">
-        <div>
-          <p className="adm-eyebrow">JABOR ADMIN · {ROLE_LABEL[session.role].toUpperCase()}</p>
-          <h1>{title}</h1>
-        </div>
-        <div className="adm-head-right">
-          {isSuper && list.length > 0 && (
-            <div className="adm-field">
-              <label htmlFor="municipality">Municipality</label>
-              <select id="municipality" className="inp" value={municipality?.id ?? ""} onChange={e => { setChosen(e.target.value); setOpenReport(null); }}>
-                {list.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-            </div>
-          )}
-          <span className="adm-who" title={session.email}>{session.email}</span>
-          <button type="button" className="btn-s" onClick={onSignOut}>Sign Out</button>
-        </div>
+    <div className={`adm${navOpen ? " has-nav" : ""}`}>
+      <header className="adm-bar">
+        <button ref={menuRef} type="button" className="adm-iconbtn" aria-label="Menu" aria-expanded={navOpen} aria-controls="adm-sidebar" onClick={() => setNavOpen(o => !o)}>
+          <Icon name="menu" size={22} />
+        </button>
+        <h1 className="adm-title">{title}</h1>
+        <UserMenu session={session} onSignOut={onSignOut} />
       </header>
 
-      <nav className="adm-tabs" aria-label="Admin sections">
-        {tabs.map(t => (
-          <button key={t.id} type="button" className={`adm-tab${tab === t.id ? " is-on" : ""}`} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      {isSuper && list.length > 0 && (
+        <div className="adm-muni-bar">
+          <div className="adm-field">
+            <label htmlFor="municipality">Municipality</label>
+            <select id="municipality" className="inp" value={municipality?.id ?? ""} onChange={e => { setChosen(e.target.value); setOpenReport(null); }}>
+              {list.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
 
-      <div className="adm-main">{body}</div>
+      <div className="adm-shell">
+        {!wide && navOpen && <div className="adm-backdrop" aria-hidden="true" onClick={() => setNavOpen(false)} />}
+        <nav id="adm-sidebar" ref={sideRef} className={`adm-side${navOpen ? " is-open" : ""}`} aria-label="Admin sections">
+          {items.map(item => (
+            <a
+              key={item.id}
+              href={formatRoute({ page: item.id })}
+              className={`adm-navitem${current.id === item.id ? " is-on" : ""}`}
+              aria-current={current.id === item.id ? "page" : undefined}
+              onClick={e => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; e.preventDefault(); choosePage(item.id); }}
+            >
+              <Icon name={item.icon} />
+              <span>{item.label}</span>
+            </a>
+          ))}
+        </nav>
+
+        <div className="adm-main">
+          <h2 className="adm-pagehead">{current.label}</h2>
+          {body}
+        </div>
+      </div>
 
       {openReport && municipality && (
         <ReportDrawer key={openReport} reportId={openReport} wards={wardList} overdueDays={overdueDays} onClose={() => setOpenReport(null)} onChanged={changed} onPhotoClick={setPhoto} />
