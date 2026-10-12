@@ -118,3 +118,20 @@ export function buildNotePatch(note: string, currentNote: string | null): { body
   if (text === (currentNote ?? "").trim()) return { error: "The note has not changed." };
   return { body: { admin_note: text || null } };
 }
+
+// ── Hide and restore (soft: the report stays in the database, only the public site stops showing it) ──
+export function buildHidePatch(reason: string, note: string): { body: Record<string, unknown> } | { error: string } {
+  if (!INVALID_REASONS.some(r => r.value === reason)) return { error: "Choose a reason." };
+  const text = note.trim();
+  if (text.length > NOTE_MAX) return { error: `Keep the note under ${NOTE_MAX} characters.` };
+  return { body: { is_deleted: true, invalid_reason: reason, ...(text ? { admin_note: text } : {}) } };
+}
+
+// Restoring puts it back on the public site. A report that is still marked Invalid keeps its reason; any other
+// report loses the reason the hide gave it.
+export function buildUnhidePatch(report: { status: string | null }, note: string): { body: Record<string, unknown> } | { error: string } {
+  const text = note.trim();
+  if (text.length > NOTE_MAX) return { error: `Keep the note under ${NOTE_MAX} characters.` };
+  const stillInvalid = statusOf({ status: report.status, is_deleted: false }) === "invalid";
+  return { body: { is_deleted: false, ...(stillInvalid ? {} : { invalid_reason: null }), ...(text ? { admin_note: text } : {}) } };
+}

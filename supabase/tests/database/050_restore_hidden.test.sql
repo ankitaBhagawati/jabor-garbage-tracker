@@ -4,7 +4,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(17);
+select plan(16);
 
 select set_config('test.jorhat', (select id::text from public.municipalities where slug = 'jorhat'), true);
 insert into auth.users (id, email, raw_app_meta_data) values
@@ -83,13 +83,11 @@ select results_eq($$select id::text, status from public.public_reports where are
   'restored reports are back on the public site; the one still hidden is not');
 reset role;
 
--- ── Municipality admin: may restore an invalid report of theirs, may not unhide ──
+-- ── Municipality admin: may restore an invalid report of theirs, not another municipality's ──
 update public.reports set status = 'invalid', invalid_reason = 'duplicate' where id = '50000000-0000-4000-8000-000000000003';
 select set_config('request.jwt.claims', json_build_object('sub', '20000000-0000-4000-8000-000000000002', 'role', 'authenticated',
   'email', 'jmb@pgtap.test', 'app_metadata', json_build_object('role', 'municipality_admin', 'municipality_id', current_setting('test.jorhat')))::text, true);
 set local role authenticated;
-select throws_ok($$update public.reports set is_deleted = false where id = '50000000-0000-4000-8000-000000000005'$$, '42501', null,
-  'a municipality admin cannot unhide a report (super admin only)');
 select lives_ok($$update public.reports set status = 'active', admin_note = 'Checked on site' where id = '50000000-0000-4000-8000-000000000003'$$,
   'a municipality admin can restore an invalid report of their municipality');
 select is_empty($$update public.reports set status = 'active', admin_note = 'x' where id = '50000000-0000-4000-8000-000000000004' returning 1$$,

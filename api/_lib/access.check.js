@@ -176,7 +176,7 @@ refused(() => patch(MUNI, `${P}&status=eq.active`, { admin_note: "x" }), "update
 refused(() => patch(MUNI, `${P}&or=(status.eq.active)`, { admin_note: "x" }), "update-filter");
 refused(() => patch(MUNI, `${P}&municipality_id=eq.${M2}`, { admin_note: "x" }), "scope-key");
 refused(() => patch(MUNI, `${P}&limit=1`, { admin_note: "x" }), "limit");
-for (const key of ["municipality_id", "is_deleted", "photo_url", "lat", "lng", "source", "cleaned_marked_by", "cleaned_marked_at", "assigned_to_text", "due_at", "updated_at", "created_at", "embedding", "id", "district", "description", "claimed_in_municipality", "in_municipality"]) {
+for (const key of ["municipality_id", "photo_url", "lat", "lng", "source", "cleaned_marked_by", "cleaned_marked_at", "assigned_to_text", "due_at", "updated_at", "created_at", "embedding", "id", "district", "description", "claimed_in_municipality", "in_municipality"]) {
   refused(() => patch(MUNI, P, { [key]: "x" }), "body-key");
 }
 refused(() => patch(MUNI, P, { admin_note: "x", municipality_id: M2 }), "body-key");
@@ -194,6 +194,16 @@ for (const body of [{ status: "in_progress" }, { status: "active", admin_note: "
   { status: "cleaned", cleaned_by_name: "JMB team", cleaned_by_type: "jmb", cleaned_at: "2026-10-10T00:00:00Z" }, { status: "invalid", invalid_reason: "spam", admin_note: "Spam" }]) {
   assert.doesNotThrow(() => patch(MUNI, P, body, "return=representation"), JSON.stringify(body));
 }
+// a municipality admin may hide and unhide (a soft hide), with a reason and a note, and nothing else rides along
+assert.doesNotThrow(() => patch(MUNI, P, { is_deleted: true, invalid_reason: "spam", admin_note: "Not a real report" }, "return=representation"));
+assert.doesNotThrow(() => patch(MUNI, P, { is_deleted: false, invalid_reason: null, admin_note: "Hidden by mistake" }, "return=representation"));
+assert.doesNotThrow(() => patch(MUNI, P, { is_deleted: true }));
+for (const value of ["true", 1, 0, null, "", [true], { a: 1 }]) refused(() => patch(MUNI, P, { is_deleted: value }));
+for (const value of ["true", 1, null]) refused(() => patch(SUPER, P, { is_deleted: value }));
+refused(() => patch(MUNI, P, { is_deleted: true, municipality_id: M2 }), "body-key");
+refused(() => patch(MUNI, P, { is_deleted: true, updated_at: "2026-10-10T00:00:00Z" }), "body-key");
+refused(() => patch(MUNI, `${P}&municipality_id=eq.${M2}`, { is_deleted: true }), "scope-key");
+refused(() => authorize(MUNI, { path: P, method: "DELETE" }), "operation");
 // a super admin may hide and restore, but not set the system stamps or another table's columns
 assert.doesNotThrow(() => patch(SUPER, P, { is_deleted: true, updated_at: "2026-10-10T00:00:00Z" }, "return=minimal"));
 for (const key of ["cleaned_marked_by", "cleaned_marked_at", "municipality_id", "photo_url", "embedding", "source"]) refused(() => patch(SUPER, P, { [key]: "x" }), "body-key");
@@ -451,7 +461,7 @@ for (const envelope of [
   { path: "/rest/v1/ward_localities?select=name", method: "GET" },
   { path: `/rest/v1/reports?id=eq.${ID}`, method: "DELETE" },
   { path: `/rest/v1/reports?id=eq.${ID}`, method: "PATCH", body: { municipality_id: M2 } },
-  { path: `/rest/v1/reports?id=eq.${ID}`, method: "PATCH", body: { is_deleted: true } },
+  { path: `/rest/v1/reports?id=eq.${ID}`, method: "PATCH", body: { is_deleted: "true" } },
   { path: `/functions/v1/jabor-execute`, method: "POST", body: { reportId: ID } },
   { path: `/functions/v1/jabor-notify`, method: "POST", body: {} },
 ]) {

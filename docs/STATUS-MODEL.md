@@ -46,7 +46,7 @@ Two legacy paths from the current admin screen keep working:
 
 - **Approve a citizen proof.** The screen sets the report to `cleaned` without details. The trigger fills
   them from the approved proof (`cleaned_by_type = 'citizen'`, name from the proof).
-- **Hide** (`is_deleted = true`). Super admins only. Recorded as invalid with reason `other`.
+- **Hide** (`is_deleted = true`). Any active staff member, for the reports they can update (a municipality admin: their own municipality). A soft hide: nothing is deleted, and it can be undone the same way. Recorded with a reason (`other` if none is given) and an audit row (`hidden` / `unhidden`) with the actor.
 
 The rules apply to the `authenticated` role only. Server code (service role), the database owner and the
 nightly sweep are not restricted, but everything they change is still audited.

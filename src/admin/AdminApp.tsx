@@ -121,7 +121,7 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
   else if (route.page === "reports") body = (
     <Reports
       key={`${municipality.id}-${reportsSeq}`} scope={scope} wards={wardList} overdueDays={overdueDays} version={version}
-      tab={route.tab} initial={{ status: route.status, overdue: route.overdue }} role={session.role}
+      tab={route.tab} initial={{ status: route.status, overdue: route.overdue }} 
       onTab={chooseTab} onOpenReport={setOpenReport} onChanged={changed} onPhotoClick={setPhoto}
     />
   );

@@ -4,7 +4,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(51);
+select plan(50);
 
 -- ── Fixtures ─────────────────────────────────────────────────────────────────
 insert into public.municipalities (id, slug, name) values ('10000000-0000-4000-8000-000000000001', 'pgtap-town', 'pgTAP Town');
@@ -47,7 +47,6 @@ set local role authenticated;
 select throws_ok($$update public.reports set area = 'changed' where id = '40000000-0000-4000-8000-000000000001'$$, '42501', null, 'staff cannot change a non-whitelisted column (area)');
 select throws_ok($$update public.reports set photo_url = 'https://res.cloudinary.com/pgtap/x.webp' where id = '40000000-0000-4000-8000-000000000001'$$, '42501', null, 'staff cannot change photo_url');
 select throws_ok($$update public.reports set municipality_id = null where id = '40000000-0000-4000-8000-000000000001'$$, '42501', null, 'staff cannot change municipality_id');
-select throws_ok($$update public.reports set is_deleted = true where id = '40000000-0000-4000-8000-000000000001'$$, '42501', null, 'a municipality admin cannot hide a report');
 
 -- Required fields and forbidden moves.
 select throws_ok($$update public.reports set status = 'cleaned' where id = '40000000-0000-4000-8000-000000000001'$$, '23514', null, 'cleaned needs who, type and date');

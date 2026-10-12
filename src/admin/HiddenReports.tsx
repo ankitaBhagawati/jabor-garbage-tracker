@@ -20,7 +20,6 @@ type HiddenReport = {
 };
 
 type Props = {
-  role: "super_admin" | "municipality_admin";
   municipalityId: string | null; // the chosen municipality for a super admin; null for a municipality admin
   version?: number;
   onChanged?: () => void;
@@ -47,7 +46,7 @@ function restoreEffect(report: HiddenReport) {
   return "It will show again on the public site as Active.";
 }
 
-export default function HiddenReports({ role, municipalityId, version = 0, onChanged, onPhotoClick }: Props) {
+export default function HiddenReports({ municipalityId, version = 0, onChanged, onPhotoClick }: Props) {
   const [reports, setReports] = useState<HiddenReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -69,9 +68,6 @@ export default function HiddenReports({ role, municipalityId, version = 0, onCha
   }, [municipalityId]);
 
   useEffect(() => { load(); }, [load, version]);
-
-  // Only the owner can undo a hide. A municipality admin can restore a report marked invalid.
-  const canRestore = (report: HiddenReport) => role === "super_admin" || !report.is_deleted;
 
   const openDialog = (report: HiddenReport) => {
     setSelected(report);
@@ -151,9 +147,7 @@ export default function HiddenReports({ role, municipalityId, version = 0, onCha
                 </dl>
               </div>
               <div className="admin-actions">
-                {canRestore(report)
-                  ? <button className="btn-p" onClick={() => openDialog(report)}>Restore</button>
-                  : <p className="adm-muted" style={{ fontSize: 12, maxWidth: 180 }}>Hidden by the owner. Only the owner can restore it.</p>}
+                <button className="btn-p" onClick={() => openDialog(report)}>Restore</button>
               </div>
             </div>
           ))}

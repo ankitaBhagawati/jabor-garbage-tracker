@@ -127,4 +127,25 @@ for (const [staff, scope] of [[SUPER, { municipalityId: M1 }], [MUNI, { municipa
   assert.deepEqual(params(plan).getAll("municipality_id"), [`eq.${M1}`]);
   checked++;
 }
+// ── Hide and restore: the bodies the drawer sends are ones both roles may send ──
+const F = await import("./format.ts");
+const ID = "33333333-3333-4333-8333-333333333333";
+for (const [reason, note] of [["spam", ""], ["duplicate", "  Same as another  "], ["outside_jurisdiction", "x".repeat(1000)], ["other", "Not a real report"]]) {
+  const result = F.buildHidePatch(reason, note);
+  assert.ok("body" in result, reason);
+  assert.deepEqual(Object.keys(result.body).sort(), note.trim() ? ["admin_note", "invalid_reason", "is_deleted"] : ["invalid_reason", "is_deleted"]);
+  assert.equal(result.body.is_deleted, true);
+  assert.equal(result.body.invalid_reason, reason);
+  for (const staff of [SUPER, MUNI]) authorize(staff, { path: `/rest/v1/reports?id=eq.${ID}`, method: "PATCH", prefer: "return=representation", body: result.body });
+}
+for (const reason of ["", "hacker", "Spam", undefined]) assert.match(F.buildHidePatch(reason, "").error, /reason/);
+assert.match(F.buildHidePatch("spam", "x".repeat(1001)).error, /1000/);
+// restoring: a report that is only hidden loses the hide's reason; one still marked Invalid keeps its reason
+assert.deepEqual(F.buildUnhidePatch({ status: "verified" }, "").body, { is_deleted: false, invalid_reason: null });
+assert.deepEqual(F.buildUnhidePatch({ status: "cleaned" }, " Checked ").body, { is_deleted: false, invalid_reason: null, admin_note: "Checked" });
+assert.deepEqual(F.buildUnhidePatch({ status: "invalid" }, "").body, { is_deleted: false });
+assert.deepEqual(F.buildUnhidePatch({ status: "rejected" }, "").body, { is_deleted: false });
+assert.match(F.buildUnhidePatch({ status: "verified" }, "x".repeat(1001)).error, /1000/);
+for (const staff of [SUPER, MUNI]) for (const body of [F.buildUnhidePatch({ status: "verified" }, "ok").body, F.buildUnhidePatch({ status: "invalid" }, "").body]) authorize(staff, { path: `/rest/v1/reports?id=eq.${ID}`, method: "PATCH", body });
+
 console.log(`admin shell ok (${checked} requests checked for both roles)`);
