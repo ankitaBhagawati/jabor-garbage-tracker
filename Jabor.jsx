@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useState, useEffect, useRef } from "react";
 import "./style.css";
-import SupportJaborSection, { RazorpayPaymentButton } from "./SupportJaborSection";
+import SupportJaborSection from "./SupportJaborSection";
+import Select from "./src/ui/Select.tsx";
 import MunicipalityQuestion from "./src/report/MunicipalityQuestion.tsx";
 import { findMunicipality, loadMunicipalities, placementError, placementFields } from "./src/report/placement.ts";
 import {
@@ -283,6 +284,7 @@ const WASTE = [
   { id: "water",        label: "Water Body Dump",     icon: "\u{1F4A7}",       color: "#0EA5E9" },
   { id: "medical",      label: "Medical / Hazardous", icon: "\u26A0\uFE0F",    color: "#EF4444" },
 ];
+const WASTE_OPTIONS = WASTE.map(w => ({ value: w.id, label: w.label }));
 
 const PARTY_CLR = {
   BJP: "#FF6B2B", INC: "#1A6CBD", AIUDF: "#059669",
@@ -303,6 +305,9 @@ const DATE_RANGES = [
   { id: "90", label: "Last 3 months", days: 90 },
   { id: "180", label: "Last 6 months", days: 180 },
 ];
+
+// Options for the feed filters. "Any time" and "All waste types" are the empty state, shown as the placeholder.
+const DATE_OPTIONS = DATE_RANGES.filter(range => range.id).map(range => ({ value: range.id, label: range.label }));
 
 const CLEAN_QUOTES = [
   {
@@ -328,12 +333,6 @@ function Badge({ party }) {
   return (
     <span style={{ background: c+"22", color: c, border: `1px solid ${c}44`, padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, fontFamily: "monospace", whiteSpace: "nowrap" }}>{party}</span>
   );
-}
-
-function TimeAgo({ date }) {
-  const ms = Date.now() - new Date(date).getTime();
-  const h = Math.floor(ms / 3600000), d = Math.floor(h / 24);
-  return <span>{d > 0 ? `${d}d` : h > 0 ? `${h}h` : "now"} ago</span>;
 }
 
 function Spinner() {
@@ -526,7 +525,6 @@ function ReportCard({ r, expanded, onClick, showCleanupAction = false, cleanupOp
             <span style={{ fontWeight: 700, fontSize: 14 }}>{r.constituency}</span>
             <span style={{ color: "#3C4A42", fontSize: 12 }}>· {r.district}</span>
             <span className={`status-pill ${isCleaned ? "cleaned" : "verified"}`}>{isCleaned ? "Cleaned" : "Active"}</span>
-            <span style={{ marginLeft: "auto", fontSize: 11, color: "#64748B", fontFamily: "monospace" }}><TimeAgo date={r.created_at} /></span>
           </div>
           {(r.area || r.landmark) && (
             <p style={{ fontSize: 11, color: "#3C4A42", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>
@@ -597,7 +595,6 @@ function ReportCard({ r, expanded, onClick, showCleanupAction = false, cleanupOp
 function SuccessScreen({ onDone }) {
   const [progress, setProgress] = useState(0);
   const [complete, setComplete] = useState(false);
-  const [showSupport, setShowSupport] = useState(true);
   const MESSAGES = [
     "Your report is live on the tracker…",
     "Location details have been saved…",
@@ -629,7 +626,8 @@ function SuccessScreen({ onDone }) {
     <div className="pop-in" style={{ maxWidth: 420, margin: "60px auto", textAlign: "center", padding: "0 16px" }}>
       <img src={LOGO} alt="Jabor" style={{ width: 180, maxWidth: "80%", height: "auto", objectFit: "contain", margin: "0 auto 16px", display: "block" }} />
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8, letterSpacing: "-0.03em" }}>
-        Report Submitted! ✅
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#006C49" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ verticalAlign: "-4px", marginRight: 8 }}><circle cx="12" cy="12" r="10" /><path d="m7.5 12.5 3 3 6-7" /></svg>
+        Report Submitted!
       </h2>
       <p style={{ color: "#3C4A42", fontSize: 14, lineHeight: 1.7, marginBottom: 24 }}>
         Your report was received.<br />It is now live in Active Reports.
@@ -660,29 +658,6 @@ function SuccessScreen({ onDone }) {
         </button>
       )}
 
-      {showSupport && (
-        <div className="submit-support-card success-support-card" role="region" aria-live="polite" aria-label="Optional support Jabor">
-          <button
-            type="button"
-            className="submit-support-close"
-            aria-label="Hide support message"
-            title="Hide support message"
-            onClick={() => setShowSupport(false)}
-          >
-            <span className="material-symbols-outlined" aria-hidden="true">close</span>
-          </button>
-          <div className="submit-support-kicker">Optional support</div>
-          <div className="submit-support-title">Keep Jabor running independently.</div>
-          <p className="submit-support-copy">
-            A small contribution helps cover hosting and report processing.
-          </p>
-          <RazorpayPaymentButton
-            containerId="razorpay-success-support-container"
-            className="jabor-razorpay-wrap submit-support-razorpay"
-          />
-          <p className="submit-support-note">Only if you want to. Your report is already submitted.</p>
-        </div>
-      )}
     </div>
   );
 }
@@ -1466,6 +1441,8 @@ export default function Jabor() {
 
   const districts   = [...new Set(mlaList.map(m => m.district))].sort();
   const consForDist = mlaList.filter(m => m.district === form.district).sort((a, b) => a.constituency.localeCompare(b.constituency));
+  const districtOptions = districts.map(d => ({ value: d, label: d }));
+  const constituencyOptions = consForDist.map(c => ({ value: c.constituency, label: c.constituency.trim() }));
 
   useEffect(() => {
     if (!form.constituency) { setPreview(null); return; }
@@ -1643,18 +1620,8 @@ export default function Jabor() {
         .btn-s { background:transparent; color:#006C49; border:1.5px solid #BBCABF; border-radius:8px; padding:11px 20px; font-family:'Inter',sans-serif; font-weight:700; font-size:14px; cursor:pointer; transition:all .2s; white-space:nowrap; touch-action:manipulation; }
         .btn-s:hover  { border-color:#006C49; background:#E8F0E9; }
         .btn-s:active { transform:scale(.97); }
-        .submit-support-card { position:relative; margin-top:14px; padding:14px 16px 12px; border:1px solid #DDE4DD; border-radius:12px; background:#FFFFFF; box-shadow:0 4px 18px rgba(15,23,42,.05); color:#3C4A42; text-align:left; }
-        .submit-support-close { position:absolute; top:8px; right:8px; width:30px; height:30px; border:0; border-radius:999px; background:transparent; color:#6B8577; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; transition:background .2s, color .2s; }
-        .submit-support-close:hover { background:#E8F0E9; color:#006C49; }
-        .submit-support-close .material-symbols-outlined { font-size:18px; }
-        .submit-support-kicker { color:#006C49; font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; margin-bottom:5px; padding-right:34px; }
-        .submit-support-title { color:#161D19; font-size:14px; font-weight:800; line-height:1.35; padding-right:34px; }
-        .submit-support-copy { color:#52655B; font-size:12px; line-height:1.55; margin:6px 0 10px; max-width:540px; }
-        .submit-support-note { color:#6B8577; font-size:11px; line-height:1.45; margin:8px 0 0; text-align:center; }
-        .submit-support-razorpay { justify-content:center; min-height:42px; margin:0; }
         .razorpay-fallback-link { display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:10px 18px; border:1.5px solid #2371EC; border-radius:6px; background:#F8FBFF; color:#1F4BB8; font-weight:800; font-size:14px; text-decoration:none; }
         .razorpay-fallback-link:hover { background:#EDF4FF; }
-        .success-support-card { margin-top:12px; }
         .contact-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
         .anonymous-inline-toggle { display:flex; flex-direction:column; align-items:center; gap:7px; color:#006C49; font-size:11px; font-weight:800; cursor:pointer; white-space:nowrap; }
         .inp { width:100%; background:#FFFFFF; border:1.5px solid #BBCABF; border-radius:8px; padding:13px 14px; color:#161D19; font-family:'Inter',sans-serif; font-size:16px; outline:none; transition:border-color .2s, box-shadow .2s; -webkit-appearance:none; }
@@ -1670,10 +1637,6 @@ export default function Jabor() {
         .incognito .inp { background:#161D19; border-color:#3A473E; color:#F4FBF4; }
         .incognito .inp::placeholder { color:#8CA394; }
         .incognito .inp option { background:#212C25; color:#F4FBF4; }
-        .incognito .submit-support-card { background:#212C25; border-color:#3A473E; box-shadow:none; }
-        .incognito .submit-support-title { color:#F4FBF4; }
-        .incognito .submit-support-copy, .incognito .submit-support-note { color:#8CA394; }
-        .incognito .submit-support-close:hover { background:#3A473E; }
         .incognito-bar { display:flex; align-items:center; justify-content:space-between; gap:14px; background:#161D19; color:#E8F0E9; border:1px solid #3A473E; border-radius:12px; padding:14px 16px; margin-bottom:14px; }
         .incognito-copy { display:flex; align-items:center; gap:10px; min-width:0; }
         .incognito-copy-icon { font-size:20px; display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; flex:none; }
@@ -1785,7 +1748,6 @@ export default function Jabor() {
           .hero-btns { flex-direction:column; }
           .hero-btns .btn-p, .hero-btns .btn-s { width:auto; text-align:center; }
           .card { padding:14px; border-radius:12px; }
-          .submit-support-card { padding:13px 14px 12px; }
           .contact-card-head { align-items:flex-start; }
           .anonymous-inline-toggle { font-size:10px; }
           .incognito { padding:8px; border-radius:14px; }
@@ -1972,14 +1934,9 @@ export default function Jabor() {
                     </div>
                     <div className="form-2col" style={{ marginBottom: 10 }}>
                       <input className="inp" placeholder="Filter by area, landmark, district" value={feedFilters.place} onChange={e => setFeedFilters(f => ({ ...f, place: e.target.value }))} />
-                      <select className="inp" value={feedFilters.wasteType} onChange={e => setFeedFilters(f => ({ ...f, wasteType: e.target.value }))}>
-                        <option value="">All waste types</option>
-                        {WASTE.map(w => <option key={w.id} value={w.id}>{w.label}</option>)}
-                      </select>
+                      <Select label="waste type" placeholder="All waste types" clearable value={feedFilters.wasteType} options={WASTE_OPTIONS} onChange={wasteType => setFeedFilters(f => ({ ...f, wasteType }))} />
                     </div>
-                    <select className="inp" value={feedFilters.dateRange} onChange={e => setFeedFilters(f => ({ ...f, dateRange: e.target.value }))}>
-                      {DATE_RANGES.map(range => <option key={range.id || "all"} value={range.id}>{range.label}</option>)}
-                    </select>
+                    <Select label="date range" placeholder="Any time" clearable value={feedFilters.dateRange} options={DATE_OPTIONS} onChange={dateRange => setFeedFilters(f => ({ ...f, dateRange }))} />
                   </div>
                   {loadingRep ? <Spinner /> : dashboardTabReports.length === 0 ? (
                     <div className="card" style={{ textAlign: "center", padding: "44px 16px" }}>
@@ -2141,21 +2098,15 @@ export default function Jabor() {
             <div className="card" style={{ marginBottom: 14 }}>
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>📍 Location</div>
               <div style={{ marginBottom: 12 }}>
-                <label className="lbl">DISTRICT <span style={{ color: "#10B981" }}>*</span></label>
+                <label className="lbl" id="district-label" htmlFor="district-select">DISTRICT <span style={{ color: "#10B981" }}>*</span></label>
                 {loadingMlas
                   ? <div style={{ color: "#3C4A42", fontSize: 13, padding: "8px 0" }}>Loading districts…</div>
-                  : <select className="inp" value={form.district} onChange={e => setForm(f => ({ ...f, district: e.target.value, constituency: "", area: "", landmark: "", muniAnswer: "", wardChoice: "" }))}>
-                      <option value="">Select district</option>
-                      {districts.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>}
+                  : <Select id="district-select" labelledBy="district-label" label="district" placeholder="Select district" value={form.district} options={districtOptions} onChange={district => setForm(f => ({ ...f, district, constituency: "", area: "", landmark: "", muniAnswer: "", wardChoice: "" }))} />}
               </div>
               {form.district && (
                 <div style={{ marginBottom: 12 }}>
-                  <label className="lbl">CONSTITUENCY <span style={{ color: "#10B981" }}>*</span></label>
-                  <select className="inp" value={form.constituency} onChange={e => setForm(f => ({ ...f, constituency: e.target.value, area: "", landmark: "", muniAnswer: "", wardChoice: "" }))}>
-                    <option value="">Select constituency</option>
-                    {consForDist.map(c => <option key={c.id} value={c.constituency}>{c.constituency}  </option>)}
-                  </select>
+                  <label className="lbl" id="constituency-label" htmlFor="constituency-select">CONSTITUENCY <span style={{ color: "#10B981" }}>*</span></label>
+                  <Select id="constituency-select" labelledBy="constituency-label" label="constituency" placeholder="Select constituency" value={form.constituency} options={constituencyOptions} onChange={constituency => setForm(f => ({ ...f, constituency, area: "", landmark: "", muniAnswer: "", wardChoice: "" }))} />
                 </div>
               )}
               {askedMunicipality && (
@@ -2299,15 +2250,10 @@ export default function Jabor() {
             <div className="card" style={{ marginBottom: 14, padding: 12 }}>
               <div className="form-2col" style={{ marginBottom: 10 }}>
                 <input className="inp" placeholder="Filter by area, landmark, district" value={feedFilters.place} onChange={e => setFeedFilters(f => ({ ...f, place: e.target.value }))} />
-                <select className="inp" value={feedFilters.wasteType} onChange={e => setFeedFilters(f => ({ ...f, wasteType: e.target.value }))}>
-                  <option value="">All waste types</option>
-                  {WASTE.map(w => <option key={w.id} value={w.id}>{w.label}</option>)}
-                </select>
+                <Select label="waste type" placeholder="All waste types" clearable value={feedFilters.wasteType} options={WASTE_OPTIONS} onChange={wasteType => setFeedFilters(f => ({ ...f, wasteType }))} />
               </div>
               <div className="form-2col">
-                <select className="inp" value={feedFilters.dateRange} onChange={e => setFeedFilters(f => ({ ...f, dateRange: e.target.value }))}>
-                  {DATE_RANGES.map(range => <option key={range.id || "all"} value={range.id}>{range.label}</option>)}
-                </select>
+                <Select label="date range" placeholder="Any time" clearable value={feedFilters.dateRange} options={DATE_OPTIONS} onChange={dateRange => setFeedFilters(f => ({ ...f, dateRange }))} />
               </div>
             </div>
             {/* Disclaimer with sparkle effect */}
@@ -2386,7 +2332,6 @@ export default function Jabor() {
               </div>
               <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 11, color: "#3C4A42" }}>Status: <strong style={{ color: selReport.status === "cleaned" ? "#10B981" : "#006C49" }}>{selReport.status === "verified" ? "active" : selReport.status}</strong></span>
-                <span style={{ fontSize: 11, color: "#3C4A42" }}>Reported <TimeAgo date={selReport.created_at} /></span>
               </div>
             </div>
           </div>

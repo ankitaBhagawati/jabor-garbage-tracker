@@ -1,0 +1,36 @@
+/* Select: a searchable, accessible replacement for the native dropdown. Same look as .inp. */
+.jsel { position: relative; width: 100%; }
+.jsel-trigger { display: flex; align-items: center; width: 100%; min-height: 48px; text-align: left; background: #fff; border: 1.5px solid #BBCABF; border-radius: 8px; padding: 12px 76px 12px 14px; color: #161D19; font: 400 16px 'Inter', sans-serif; cursor: pointer; transition: border-color .2s, box-shadow .2s; position: relative; }
+.jsel-trigger:focus-visible, .jsel.is-open .jsel-trigger { border-color: #006C49; box-shadow: 0 0 0 4px rgba(16, 185, 129, .12); outline: none; }
+.jsel-trigger[disabled] { background: #F4F6F4; cursor: not-allowed; opacity: .7; }
+.jsel-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jsel-placeholder { color: #64748B; }
+.jsel-chevron { position: absolute; right: 14px; top: 50%; width: 18px; height: 18px; margin-top: -9px; color: #3C4A42; pointer-events: none; transition: transform .15s; }
+.jsel.is-open .jsel-chevron { transform: rotate(180deg); }
+.jsel-clear { position: absolute; right: 36px; top: 50%; width: 44px; height: 44px; margin-top: -22px; display: grid; place-items: center; background: transparent; border: 0; border-radius: 8px; color: #3C4A42; cursor: pointer; padding: 0; }
+.jsel-clear:hover { color: #161D19; background: #E8F0E9; }
+.jsel-clear:focus-visible { outline: 2px solid #006C49; outline-offset: -2px; }
+.jsel-clear svg { width: 16px; height: 16px; }
+
+.jsel-panel { position: fixed; z-index: 1000; display: flex; flex-direction: column; background: #fff; border: 1.5px solid #BBCABF; border-radius: 8px; box-shadow: 0 12px 28px rgba(22, 29, 25, .18); overflow: hidden; font-family: 'Inter', sans-serif; }
+.jsel-sheet { left: 0; right: 0; bottom: 0; top: auto; border-radius: 14px 14px 0 0; border-width: 1.5px 0 0; max-height: 50vh; max-height: 50dvh; }
+.jsel-backdrop { position: fixed; inset: 0; z-index: 999; background: rgba(22, 29, 25, .4); }
+.jsel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 4px 4px 16px; border-bottom: 1px solid #E3EBE5; font-weight: 800; font-size: 14px; color: #161D19; }
+.jsel-close { width: 44px; height: 44px; display: grid; place-items: center; background: transparent; border: 0; border-radius: 8px; color: #3C4A42; cursor: pointer; padding: 0; }
+.jsel-close svg { width: 18px; height: 18px; }
+.jsel-search { display: block; width: calc(100% - 16px); margin: 8px; min-height: 44px; border: 1.5px solid #BBCABF; border-radius: 8px; padding: 10px 12px; font: 400 16px 'Inter', sans-serif; color: #161D19; outline: none; flex: none; }
+.jsel-search:focus { border-color: #006C49; box-shadow: 0 0 0 3px rgba(16, 185, 129, .12); }
+.jsel-list { list-style: none; margin: 0; padding: 4px; overflow-y: auto; overscroll-behavior: contain; flex: 1 1 auto; min-height: 0; }
+.jsel-option { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 10px; border-radius: 6px; font-size: 15px; color: #161D19; cursor: pointer; }
+.jsel-option span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.jsel-option.is-active { background: #E8F0E9; }
+.jsel-option[aria-selected="true"] { font-weight: 800; color: #006C49; }
+.jsel-check { width: 18px; height: 18px; flex: none; color: #006C49; }
+.jsel-empty { padding: 14px 12px; color: #3C4A42; font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { .jsel-chevron, .jsel-trigger { transition: none; } }
+
+/* the app's dark theme (.incognito) recolours the card's spans, so the closed control follows it */
+.incognito .jsel-trigger { background: #161D19; border-color: #3A473E; color: #F4FBF4; }
+.incognito .jsel-placeholder, .incognito .jsel-chevron, .incognito .jsel-clear { color: #8CA394; }
+.incognito .jsel-clear:hover { background: #3A473E; color: #F4FBF4; }
+.jsel-head span { text-transform: capitalize; }
