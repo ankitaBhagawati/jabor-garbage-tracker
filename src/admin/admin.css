@@ -170,12 +170,13 @@
 }
 
 /* ── Shell: header, sidebar, page ─────────────────────────────────────── */
-/* one plain header: the title wraps (never cut with an ellipsis), the menu button and the profile icon sit on the right */
-.adm-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin: 0 0 12px; padding: 4px 0 8px; border-bottom: 1px solid var(--adm-line); }
+/* one plain header: the menu button, then the title (it wraps, never cut with an ellipsis), then the profile icon on the right */
+.adm-bar { display: flex; align-items: flex-start; gap: 4px; margin: 0 0 12px; padding: 4px 0 8px; border-bottom: 1px solid var(--adm-line); }
 .adm-title { flex: 1 1 auto; min-width: 0; margin: 0; padding-top: 10px; font-size: 18px; font-weight: 900; letter-spacing: -0.02em; line-height: 1.25; overflow-wrap: anywhere; }
 .adm-bar-right { display: flex; align-items: flex-start; gap: 0; flex: none; }
 .adm-iconbtn { width: 44px; height: 44px; display: grid; place-items: center; flex: none; background: transparent; border: 0; border-radius: 8px; color: var(--adm-ink); cursor: pointer; padding: 0; }
 .adm-iconbtn:hover { background: var(--adm-soft); }
+.adm-menu-top { margin-left: -10px; }
 .adm-menu-side, .adm-close-side { display: none; }
 .adm-muni-bar { margin-bottom: 12px; }
 .adm-muni-bar .adm-field { max-width: 320px; flex: none; }
