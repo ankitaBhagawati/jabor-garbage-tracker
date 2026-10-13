@@ -2,6 +2,9 @@ import ReactGA from "react-ga4";
 
 let isInitialized = false;
 
+// GA runs only on a Vercel production build. A missing VERCEL_ENV (localhost, or anything unexpected) means off.
+export const gaEnabled = env => env?.VERCEL_ENV === "production" && env?.APP_ENV !== "staging";
+
 export function initGA(measurementId) {
   if (!measurementId || isInitialized) return;
 

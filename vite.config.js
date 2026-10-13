@@ -69,7 +69,8 @@ export default defineConfig(({ mode }) => {
   }
   return {
     // APP_ENV (production | staging) is not secret; exposing it lets the client tag Sentry and skip GA on staging.
-    envPrefix: ["VITE_", "APP_ENV"],
+    // VERCEL_ENV is set by Vercel on every build; GA loads only when it is "production".
+    envPrefix: ["VITE_", "APP_ENV", "VERCEL_ENV"],
     build: { sourcemap: sentry ? "hidden" : false },
     plugins: [react(), devApiRoutes(mode), sentry].filter(Boolean),
   };
