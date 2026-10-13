@@ -85,7 +85,7 @@ const auditList = url => {
   const actor = /^ilike\.\*(.*)\*$/.exec(q.get("actor_email") || "")?.[1];
   let rows = auditBulk ? Array.from({ length: auditBulk }, (_, i) => ({ ...AUDIT[0], id: auditBulk - i, created_at: new Date(Date.UTC(2026, 9, 1) + (auditBulk - i) * 1000).toISOString() })) : AUDIT.filter(r =>
     (!q.get("municipality_id") || q.get("municipality_id") === `eq.${r.municipality_id}`) &&
-    (!q.get("action") || q.get("action") === `eq.${r.action}`) && (!q.get("entity_type") || q.get("entity_type") === `eq.${r.entity_type}`) &&
+    (!q.get("action") || q.get("action") === `eq.${r.action}`) && q.getAll("entity_type").every(f => f === `eq.${r.entity_type}`) &&
     (!actor || r.actor_email.toLowerCase().includes(actor.toLowerCase())) && (!gte || r.created_at >= gte) && (!lte || r.created_at <= lte));
   rows = [...rows].sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : b.id - a.id));
   const offset = Number(q.get("offset") || 0), limit = Number(q.get("limit") || 1000);
@@ -236,7 +236,8 @@ assert.deepEqual(AUDIT_HEADER, ["id", "date", "actor", "action", "entity_type", 
 
 // no filters: everything the caller may see. A municipality admin: only their municipality. A super admin: all of it.
 out = await run("t-muni", { type: "audit_log", path: AUDIT_PATH("") });
-assert.equal(csvLines(out).length - 1, AUDIT.filter(r => r.municipality_id === M1).length);
+assert.equal(csvLines(out).length - 1, AUDIT.filter(r => r.municipality_id === M1 && r.entity_type === "report").length, "report rows of their municipality, and no staff rows");
+assert.ok(!csvLines(out).some(l => /staff_|new\.admin@example\.test/.test(l)), "no staff management row");
 assert.equal(new URL(out.calls.find(c => c.url.includes("/audit_log") && c.init.method !== "POST").url).searchParams.get("municipality_id"), `eq.${M1}`, "the server adds the scope");
 assert.ok(!csvLines(out).some(l => l.includes("other@example.test")), "nothing from another municipality");
 out = await run("t-super", { type: "audit_log", path: AUDIT_PATH("") });

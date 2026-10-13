@@ -2,7 +2,8 @@
 // it is listed here. The request is checked piece by piece (path, method, query parameters, filters,
 // select, order, body, Prefer) and then rebuilt from the validated pieces, so what is checked is exactly
 // what Supabase receives. For a municipality admin the proxy also adds the municipality filter itself;
-// RLS enforces the same scope again in the database.
+// RLS enforces the same scope again in the database. On audit_log the proxy narrows a municipality admin
+// further, to report rows: that part is enforced here only.
 //
 // Pure functions only, so the rules can be tested without a network. See docs/ACCESS-MATRIX.md.
 
@@ -88,6 +89,9 @@ const TABLES = {
     order: { super_admin: ["created_at", "id"], municipality_admin: ["created_at", "id"] },
     embeds: {},
     scope: { municipality_admin: "municipality_id" },
+    // A municipality admin reads report rows only. Staff management, exports and any entity type added later
+    // carry the municipality's id too, so the municipality scope alone would show them.
+    only: { municipality_admin: [["entity_type", "eq.report"]] },
   },
   wards: {
     select: ["super_admin", "municipality_admin"],
@@ -319,6 +323,9 @@ export function authorize(staff, request) {
     if (!scopeValue || !UUID.test(scopeValue)) deny("scope-missing");
     pairs.push([scopeKey, `eq.${scopeValue}`]);
   }
+  // Fixed filters for the role. Postgrest ANDs every parameter, a repeated column included, so nothing the
+  // client sent (the same column, an or=, an and=) can widen this.
+  pairs.push(...(table.only?.[role] ?? []));
 
   const query = pairs.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
   return { path: `${pathOnly}?${query}`, method, prefer: request.prefer, body };
