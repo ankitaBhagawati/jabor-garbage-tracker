@@ -151,7 +151,7 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
       {isSuper && list.length > 0 && (
         <div className="adm-muni-bar">
           <div className="adm-field">
-            <label htmlFor="municipality">Municipality</label>
+            <label htmlFor="municipality">Reports</label>
             <select id="municipality" className="inp" value={chosen} onChange={e => { setChosen(e.target.value); setOpenReport(null); }}>
               <option value="">View all</option>
               {list.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
