@@ -285,3 +285,7 @@
 .adm-thumbbtn { padding: 0; border: 0; background: transparent; border-radius: 8px; cursor: zoom-in; line-height: 0; }
 .adm-thumbbtn:focus-visible { outline: 3px solid #1b6ef3; outline-offset: 2px; }
 .adm-thumbbtn img { border-radius: 8px; object-fit: cover; }
+
+.adm-h2 { margin: 0 0 8px; font-size: 18px; }
+.adm-districts { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.adm-districts li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; background: #fff; border: 1px solid var(--adm-line); border-radius: 8px; }

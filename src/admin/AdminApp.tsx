@@ -44,10 +44,10 @@ const isWide = () => (typeof window.matchMedia === "function" ? window.matchMedi
 // opened from any page.
 export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged }: Props) {
   const isSuper = session.role === "super_admin";
-  // A super admin chooses "View all" (chosen is empty) or one municipality. Add admins is a View all page.
+  // A super admin chooses "View all" (chosen is empty) or one municipality.
   const [chosen, setChosen] = useState<string>("");
   const viewAll = isSuper && !chosen;
-  const items = useMemo(() => navFor(session.role, extraTabs).filter(item => item.id !== "admins" || viewAll), [session.role, extraTabs, viewAll]);
+  const items = useMemo(() => navFor(session.role, extraTabs), [session.role, extraTabs]);
   const pages = useMemo(() => items.map(item => item.id), [items]);
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash, pages));
   const [reportsSeq, setReportsSeq] = useState(0); // bumped when something outside the Reports page sends it a new filter
@@ -131,7 +131,7 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
   else if (viewAll && (route.page === "monthly" || route.page === "hotspots")) body = <div className="adm-state"><p>Choose a municipality above to see this page. Ward figures are worked out for one municipality at a time.</p></div>;
   else if (route.page === "monthly") body = <MonthlyReport key={areaKey} scope={scope} municipalityName={municipality?.name ?? ""} overdueDays={overdueDays} version={version} />;
   else if (route.page === "hotspots") body = <Hotspots key={areaKey} scope={scope} version={version} />;
-  else if (route.page === "admins" && viewAll) body = <StaffAdmin municipalities={list} />;
+  else if (route.page === "admins" && isSuper) body = <StaffAdmin municipalities={list} />;
   else if (route.page === "audit") body = <AuditLog key={areaKey} scope={scope} wards={wardList} version={version} onOpenReport={setOpenReport} />;
   else body = <div className="adm-panel">{extraTabs.find(t => t.id === route.page)?.render({ onPhotoClick: setPhoto, version })}</div>;
 
@@ -152,7 +152,7 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
         <div className="adm-muni-bar">
           <div className="adm-field">
             <label htmlFor="municipality">Municipality</label>
-            <select id="municipality" className="inp" value={chosen} onChange={e => { setChosen(e.target.value); setOpenReport(null); if (route.page === "admins") go(DEFAULT_ROUTE); }}>
+            <select id="municipality" className="inp" value={chosen} onChange={e => { setChosen(e.target.value); setOpenReport(null); }}>
               <option value="">View all</option>
               {list.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>

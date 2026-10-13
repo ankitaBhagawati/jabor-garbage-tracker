@@ -1058,14 +1058,17 @@ test.describe("owner", () => {
     await expect(page.getByRole("button", { name: "Clear filters" }).first()).toBeVisible();
     await page.getByRole("link", { name: "Dashboard" }).click();
     await expect(page.locator(".adm-tile", { hasText: "Unassigned wards" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Districts" }).getByRole("heading")).toContainText(/Districts \(\d+\)/);
+    await expect(page.locator(".adm-districts li").first()).toBeVisible();
     await page.getByLabel("Municipality").first().selectOption({ label: "Jorhat Municipal Board" });
     await expect(page.locator(".adm-tile", { hasText: "Unassigned wards" })).toHaveCount(1);
+    await expect(page.getByRole("region", { name: "Districts" })).toHaveCount(0);
     await page.getByRole("link", { name: "Reports", exact: true }).click();
     await expect(page.getByRole("tab", { name: /Unassigned wards/ })).toHaveCount(1);
     await expect(page.getByRole("combobox", { name: "District" })).toHaveCount(0);
   });
 
-  test("[super] View all has Add admins; one municipality does not, and Hotspots needs one", async ({ page }) => {
+  test("[super] Add admins stays in the menu for every choice, and Hotspots needs a municipality", async ({ page }) => {
     await page.goto("/admin");
     const side = page.getByRole("navigation", { name: "Admin sections" });
     await page.getByRole("link", { name: "Hotspots" }).click();
@@ -1073,8 +1076,8 @@ test.describe("owner", () => {
     await side.getByRole("link", { name: "Add admins" }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Add admins");
     await page.getByLabel("Municipality").first().selectOption({ label: "Jorhat Municipal Board" });
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Dashboard");
-    await expect(side.getByRole("link", { name: "Add admins" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Add admins");
+    await expect(side.getByRole("link", { name: "Add admins" })).toHaveCount(1);
     await page.getByRole("link", { name: "Hotspots" }).click();
     await expect(page.getByText(/Choose a municipality above/)).toHaveCount(0);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Hotspots");
