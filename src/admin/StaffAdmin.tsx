@@ -14,7 +14,7 @@ type Confirm = { row: StaffRow; activate: boolean };
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const messageOf = (e: unknown) => (e instanceof AdminApiError ? e.message : "Something went wrong. Please try again.");
 
-// Municipal admins (super admin only; the server refuses everyone else). Lists staff, adds a municipality admin,
+// Add admins (super admin only; the server refuses everyone else). Lists staff, adds a municipality admin,
 // and switches one on or off. A password exists in this component only while the form is open and in the
 // one-time panel after creating: it is never put in the address, storage, a log or an analytics event.
 export default function StaffAdmin({ municipalities }: Props) {
@@ -101,7 +101,7 @@ export default function StaffAdmin({ municipalities }: Props) {
   const strong = password.length > 0 && !problem;
 
   return (
-    <section aria-label="Municipal admins" className="adm-panel">
+    <section aria-label="Add admins" className="adm-panel">
       <div className="adm-toolbar">
         <p className="adm-muted adm-intro">People who can sign in to the admin area. A municipal admin sees only their own municipality.</p>
         {!adding && <button type="button" className="btn-p adm-add" onClick={() => { setAdding(true); setMunicipalityId(defaultMunicipality); setNotice(""); setActionError(""); }}><Icon name="plus" size={18} /> Add municipal admin</button>}

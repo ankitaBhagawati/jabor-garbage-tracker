@@ -17,9 +17,9 @@ const NOW = new Date("2026-10-11T12:00:00Z");
 // ── The sidebar ──────────────────────────────────────────────────────────────
 const order = ["dashboard", "reports", "hotspots", "monthly", "audit"]; // the pages every role has
 assert.deepEqual(N.navFor("municipality_admin").map(i => i.id), order, "a municipality admin: the pages, in order");
-assert.deepEqual(N.navFor("super_admin").map(i => i.id), [...order, "admins"], "a super admin also has Municipal admins, last");
-assert.deepEqual(N.navFor("super_admin").map(i => i.label), ["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log", "Municipal admins"]);
-assert.ok(!N.navFor("municipality_admin").some(i => /municipal admins/i.test(i.label)), "Municipal admins is for super admins only");
+assert.deepEqual(N.navFor("super_admin").map(i => i.id), [...order, "admins"], "a super admin also has Add admins, last");
+assert.deepEqual(N.navFor("super_admin").map(i => i.label), ["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log", "Add admins"]);
+assert.ok(!N.navFor("municipality_admin").some(i => /add admins/i.test(i.label)), "Add admins is for super admins only");
 const extra = [{ id: "cleanup", label: "Cleanup Verification" }];
 assert.deepEqual(N.navFor("super_admin", extra).map(i => i.id), [...order, "admins", "cleanup"], "the owner's older screens follow the pages");
 // a role-limited item shows only to that role
@@ -112,10 +112,10 @@ let checked = 0;
 for (const tab of ["all", "unassigned", "active", "in_progress", "cleaned"]) {
   for (const status of ["", "active", "in_progress", "cleaned", "invalid", "auto_cleaned"]) for (const ward of ["", "unassigned", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"]) for (const overdueOnly of [false, true]) {
     const filters = { ...EMPTY_FILTERS, status, ward, overdueOnly, q: `x"y`, from: "2026-09-01", to: "2026-10-11" };
-    for (const [staff, scope] of [[SUPER, { municipalityId: M1 }], [MUNI, { municipalityId: null }]]) {
+    for (const [staff, scope] of [[SUPER, { municipalityId: M1 }], [MUNI, { municipalityId: null }], [SUPER, { municipalityId: null }]]) {
       for (const envelope of [Q.reportsPageEnvelope(scope, filters, { key: "created_at", dir: "desc" }, 2, NOW, 7, tab)]) {
         const plan = authorize(staff, { path: envelope.path, method: envelope.method, prefer: envelope.prefer });
-        assert.deepEqual(params(plan).getAll("municipality_id"), [`eq.${M1}`]);
+        assert.deepEqual(params(plan).getAll("municipality_id"), staff === SUPER && !scope.municipalityId ? [] : [`eq.${M1}`], "View all sends no municipality");
         checked++;
       }
       const exp = Q.exportEnvelope(scope, filters, NOW, 7, tab);

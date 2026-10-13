@@ -52,11 +52,11 @@ assert.equal(Q.auditFiltersActive({ ...EMPTY_AUDIT_FILTERS, actor: "   " }), fal
 const both = params(Q.auditExportEnvelope({ municipalityId: null }, { ...EMPTY_AUDIT_FILTERS, from: "2026-09-01", to: "2026-10-11" }).path).get("and");
 assert.match(both, /^\(created_at\.gte\..*,created_at\.lte\..*\)$/);
 
-// ── Municipal admins is for super admins, and the address of it is not a page for anyone else ──
+// ── Add admins is for super admins, and the address of it is not a page for anyone else ──
 const superPages = N.navFor("super_admin").map(i => i.id), muniPages = N.navFor("municipality_admin").map(i => i.id);
 assert.ok(superPages.includes("admins"));
 assert.ok(!muniPages.includes("admins"));
-assert.equal(N.navFor("super_admin").find(i => i.id === "admins").label, "Municipal admins");
+assert.equal(N.navFor("super_admin").find(i => i.id === "admins").label, "Add admins");
 assert.equal(R.parseRoute("#/admins", superPages).page, "admins");
 assert.equal(R.parseRoute("#/admins", muniPages).page, "dashboard", "a municipality admin typing the address gets the Dashboard");
 assert.equal(R.parseRoute("#/admins/x?y=1", muniPages).page, "dashboard");
