@@ -74,6 +74,8 @@ Denials are logged with the user id, role and route, never the body.
 - It is append-only: triggers block update, delete and truncate, and the service role has no such privileges.
 - Row level security: select for `authenticated` only, a super admin reads everything, a municipality admin reads rows
   with their `municipality_id`, nobody else (an inactive admin reads nothing). Only the service role inserts.
+  The API narrows a municipality admin further, to `entity_type = report` (`api/_lib/access.js`): staff rows and export
+  rows are for a super admin only. Row level security does not enforce that part.
 - The Audit log tab's list filters today: date range (`created_at` greater or equal and less or equal, sent as one
   `and=(...)`), actor (`actor_email` contains), action (equals). The proxy also allows `entity_type`, `entity_id`, `id`
   and, for a super admin, `municipality_id`.
@@ -86,8 +88,8 @@ the reports export, unchanged. The filters are the tab's: `and` (date range), `a
 refused with 400.
 
 - **Exactly the filters sent.** No filters means every row the caller may see. The rows are read with the caller's own
-  token, so row level security applies, and the server adds the municipality scope for a municipality admin (naming a
-  municipality as one is a 403). The file never holds more than the filtered list; a test compares the row count with
+  token, so row level security applies, and the server adds the municipality scope and `entity_type = report` for a
+  municipality admin (naming a municipality as one is a 403), so their file never holds a staff row or an export row. The file never holds more than the filtered list; a test compares the row count with
   the list's count for every filter.
 - **Cap: 10,000 rows**, newest first. If more match, the first 10,000 are sent and this is said in the file name
   (`jabor-audit-log-<date>-first-10000.csv`) and in the headers `X-Truncated: true` and `X-Total-Rows: <n>`.
@@ -150,5 +152,7 @@ Authentication, Users.
 - `api/_lib/staff-mgmt.check.js`: validation, who may call, the order of writes, rollback on each failure, duplicate
   email, the rules for switching accounts, immediate deactivation, the limiter (limit, per actor, Redis down, not
   configured), and that no password or key appears in a response, a log or an audit row.
+- `api/_lib/audit-scope.check.js`: a municipality admin gets report rows only, through the list, the filtered export and
+  Export all, whatever the filters; a super admin still gets everything.
 - `api/_lib/export.check.js`: the audit export (filters against the list's count, scope, cap, injection, redaction, logging).
 - `supabase/tests/database/110_audit_log_staff_actions.test.sql`: the table takes the new rows, stays append-only, and who reads what.

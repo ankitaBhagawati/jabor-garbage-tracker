@@ -11,7 +11,7 @@ HttpOnly cookie (RLS as `authenticated`). **service role** bypasses RLS and is o
 | Role | Who | Sees |
 |---|---|---|
 | `super_admin` | The owner. The older JWT role `admin` counts as `super_admin`. | Every municipality, the contact tables, the edge functions. |
-| `municipality_admin` | JMB staff. One municipality. | Their own municipality's reports, wards, audit log, and their own profile. Nothing else. |
+| `municipality_admin` | JMB staff. One municipality. | Their own municipality's reports, wards, the report rows of the audit log, and their own profile. Nothing else. |
 
 The role is decided on the server for every request, never from anything the browser sends:
 
@@ -40,7 +40,7 @@ Code: `api/_lib/access.js`. Tests: `api/_lib/access.check.js`.
 | `reports` | S, U | S, U | `municipality_id = own` |
 | `cleanup_proofs` | S, U | - | (not available to municipality admins yet) |
 | `report_contacts` | S | - | |
-| `audit_log` | S | S | `municipality_id = own` |
+| `audit_log` | S | S | `municipality_id = own` AND `entity_type = report` (staff rows and export rows are super_admin only) |
 | `wards` | S | S | `municipality_id = own` |
 | `ward_localities` | S | - | (not available to municipality admins yet) |
 | `municipalities` | S | S | `id = own` |
@@ -172,7 +172,7 @@ Dedicated routes outside the proxy, super admin only (details: `docs/STAFF-MANAG
 | `GET /api/admin/staff` (list) | yes | 403 | 401 |
 | `POST /api/admin/staff` (create a municipality admin; role fixed by the server) | yes | 403 | 401 |
 | `POST /api/admin/staff/status` (switch a municipality admin on or off) | yes (not yourself) | 403 | 401 |
-| `POST /api/admin/export` with `type: "audit_log"` | all rows, or one municipality by filter | own municipality only (naming one is 403) | 401 |
+| `POST /api/admin/export` with `type: "audit_log"` | all rows, or one municipality by filter | own municipality AND `entity_type = report` only: no staff rows, no export rows (naming a municipality is 403) | 401 |
 
 Inactive staff, a missing profile, a token and profile that disagree, and a role such as `authenticated` get 403, as
 for the proxy. Creating accounts uses the Auth admin API with the service role key, on the server only. Create and

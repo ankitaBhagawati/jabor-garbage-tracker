@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { adminRequest, downloadCsv } from "./adminApi.ts";
-import { ACTION_LABEL, actorLabel, describeAudit, formatDateTime } from "./format.ts";
+import { ACTION_LABEL, actorLabel, auditActionOptions, describeAudit, formatDateTime } from "./format.ts";
 import { EMPTY_AUDIT_FILTERS, PAGE_SIZE, auditExportEnvelope, auditFiltersActive, auditPageEnvelope, type AuditFilters, type Scope } from "./queryBuilders.ts";
 import { DateField, FilterPanel, SelectField, TextField } from "./Filters.tsx";
 import { Icon } from "./icons.tsx";
 import { EmptyBox, ErrorBox, Pager } from "./Pieces.tsx";
-import type { AuditRow, Ward } from "./types.ts";
+import type { AuditRow, Role, Ward } from "./types.ts";
 import { useAsync } from "./useAsync.ts";
 
-type Props = { scope: Scope; wards: Ward[]; version: number; onOpenReport: (id: string) => void };
+type Props = { scope: Scope; role: Role; wards: Ward[]; version: number; onOpenReport: (id: string) => void };
 
-// Read-only list of what staff and the system did, newest first. A municipality admin sees only their
-// own municipality's rows; the server enforces that.
-export default function AuditLog({ scope, wards, version, onOpenReport }: Props) {
+// Read-only list of what staff and the system did, newest first. A municipality admin sees only the report
+// rows of their own municipality; the server enforces that.
+export default function AuditLog({ scope, role, wards, version, onOpenReport }: Props) {
   const [filters, setFilters] = useState<AuditFilters>(EMPTY_AUDIT_FILTERS);
   const [actor, setActor] = useState("");
   const [page, setPage] = useState(1);
@@ -56,7 +56,7 @@ export default function AuditLog({ scope, wards, version, onOpenReport }: Props)
         actions={<button type="button" className="btn-s adm-export" disabled={exporting} onClick={exportCsv}><Icon name="download" size={18} /> {exporting ? "Preparing…" : exportFiltered ? "Export filtered CSV" : "Export all CSV"}</button>}
         footer={filtersActive ? <button type="button" className="btn-s adm-clear" onClick={clear}>Clear filters</button> : null}
       >
-        <SelectField label="Action" value={filters.action} placeholder="All actions" options={Object.entries(ACTION_LABEL).map(([value, label]) => ({ value, label }))} onChange={value => setFilters(f => ({ ...f, action: value }))} />
+        <SelectField label="Action" value={filters.action} placeholder="All actions" options={auditActionOptions(role)} onChange={value => setFilters(f => ({ ...f, action: value }))} />
         <TextField label="Done by" value={actor} onChange={setActor} placeholder="Email, public or system" />
         <DateField label="From" value={filters.from} max={filters.to || undefined} onChange={value => setFilters(f => ({ ...f, from: value }))} />
         <DateField label="To" value={filters.to} min={filters.from || undefined} onChange={value => setFilters(f => ({ ...f, to: value }))} />

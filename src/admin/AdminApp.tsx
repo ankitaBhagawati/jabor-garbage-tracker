@@ -132,7 +132,7 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
   else if (route.page === "monthly") body = <MonthlyReport key={areaKey} scope={scope} municipalityName={municipality?.name ?? ""} overdueDays={overdueDays} version={version} />;
   else if (route.page === "hotspots") body = <Hotspots key={areaKey} scope={scope} version={version} />;
   else if (route.page === "admins" && isSuper) body = <StaffAdmin municipalities={list} />;
-  else if (route.page === "audit") body = <AuditLog key={areaKey} scope={scope} wards={wardList} version={version} onOpenReport={setOpenReport} />;
+  else if (route.page === "audit") body = <AuditLog key={areaKey} scope={scope} role={session.role} wards={wardList} version={version} onOpenReport={setOpenReport} />;
   else body = <div className="adm-panel">{extraTabs.find(t => t.id === route.page)?.render({ onPhotoClick: setPhoto, version })}</div>;
 
   return (
