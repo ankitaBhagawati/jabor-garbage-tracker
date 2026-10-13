@@ -534,6 +534,8 @@ function Footer({ onAbout, onHowItWorks, onSupport }) {
             <button className="footer-link" type="button" onClick={onAbout}>About Jabor</button>
             <button className="footer-link" type="button" onClick={onHowItWorks}>How It Works</button>
             <button className="footer-link" type="button" onClick={onSupport}>Support Jabor</button>
+            <a href="/privacy" style={{ color: "#CBD5E1", textDecoration: "none", fontSize: 14 }}>Privacy Policy</a>
+            <a href="/terms" style={{ color: "#CBD5E1", textDecoration: "none", fontSize: 14 }}>Terms and Conditions</a>
             <a href="mailto:jaborassam@gmail.com?subject=Jabor%20contact" style={{ color: "#CBD5E1", textDecoration: "none", fontSize: 14 }}>Contact us</a>
             <a href="https://instagram.com/Tech_Bagwitty" target="_blank" rel="noopener noreferrer" style={{ color: "#CBD5E1", textDecoration: "none", fontSize: 14 }}>Built by @Tech_Bagwitty</a>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
@@ -2012,6 +2014,9 @@ export default function Jabor() {
                submitting                               ? "Please wait…"        : "Submit Report"}
             </button>
             <p style={{ textAlign: "center", fontSize: 11, color: "#3C4A42", marginTop: 10 }}>Your identity stays private · No login · Report data is public</p>
+            <p style={{ textAlign: "center", fontSize: 11, color: form.anonymous ? "#8CA394" : "#3C4A42", marginTop: 4, lineHeight: 1.6 }}>
+              By sending a report you agree to the <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: form.anonymous ? "#8CA394" : "#006C49", fontWeight: 700 }}>Terms and Conditions</a> and the <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: form.anonymous ? "#8CA394" : "#006C49", fontWeight: 700 }}>Privacy Policy</a>.
+            </p>
           </div>
         )}
 
