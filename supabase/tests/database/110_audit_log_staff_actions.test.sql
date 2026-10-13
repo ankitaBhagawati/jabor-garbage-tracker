@@ -5,7 +5,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(17);
+select plan(18);
 
 insert into public.municipalities (id, slug, name) values
   ('30000000-0000-4000-8000-000000000011', 'pgtap-a', 'pgtap a'),
@@ -51,9 +51,16 @@ create function pg_temp.visible() returns text language sql stable as $$
 $$;
 grant execute on function pg_temp.visible() to authenticated, anon;
 
+-- The table may already hold staff_member and export rows (a database that has been used). So the expected
+-- number is counted here, as the privileged role, after this test's own rows are in; it is never a literal.
+select set_config('test.all_rows', (select count(*)::text from public.audit_log where entity_type in ('staff_member', 'export')), true);
+
 select set_config('request.jwt.claims', '{"sub":"20000000-0000-4000-8000-000000000021","role":"authenticated","email":"super@pgtap.test","app_metadata":{"role":"super_admin"}}', true);
 set local role authenticated;
-select is((select count(*)::int from public.audit_log where entity_type in ('staff_member', 'export')), 4, 'a super admin reads every municipality''s rows, and the ones with none');
+select is((select count(*)::int from public.audit_log where entity_type in ('staff_member', 'export')), current_setting('test.all_rows')::int, 'a super admin reads every municipality''s rows, and the ones with none');
+-- and the four rows this test wrote (identified by their own actors, so other rows cannot change the answer),
+-- one of them with no municipality, are among them
+select is((select count(*)::int from public.audit_log where entity_type in ('staff_member', 'export') and actor_email like '%@pgtap.test'), 4, 'including the four this test wrote, one of them with no municipality');
 reset role;
 
 select set_config('request.jwt.claims', '{"sub":"20000000-0000-4000-8000-000000000022","role":"authenticated","email":"jmb-a@pgtap.test","app_metadata":{"role":"municipality_admin","municipality_id":"30000000-0000-4000-8000-000000000011"}}', true);
