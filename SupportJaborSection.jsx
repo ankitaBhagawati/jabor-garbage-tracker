@@ -66,7 +66,7 @@ export default function SupportJaborSection() {
   return (
     <section id="support-jabor" className="page-section" style={{ scrollMarginTop: 80 }}>
       <div className={`cta-panel${highlight ? " jabor-support-panel--on" : ""}`}>
-        <h2 className="jabor-support-title">❤️ Support Jabor</h2>
+        <h2 className="jabor-support-title">Support Jabor</h2>
         <p className="jabor-support-text">
           Jabor is a free civic-tech platform helping citizens report garbage
           across Assam. Your support helps cover hosting, AI processing, domain

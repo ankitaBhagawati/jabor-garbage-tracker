@@ -48,7 +48,7 @@
 .adm-sort { background: none; border: 0; padding: 4px 0; font: inherit; font-weight: 800; letter-spacing: inherit; text-transform: inherit; color: inherit; cursor: pointer; }
 .adm-link { background: none; border: 0; padding: 0; font: inherit; font-weight: 800; color: var(--adm-green); text-align: left; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
 .adm-cell-photo img, .adm-nophoto { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; background: #dfe7e0; display: block; }
-.adm-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+.adm-badge { display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .adm-badge-active { background: #fff1d6; color: #7a4b00; }
 .adm-badge-in_progress { background: #dcebff; color: #124a99; }
 .adm-badge-cleaned { background: #d9f4e4; color: #0b5d36; }
