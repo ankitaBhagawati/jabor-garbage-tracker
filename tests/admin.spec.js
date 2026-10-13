@@ -595,7 +595,7 @@ test.describe("municipality admin", () => {
     expect(style).toMatchObject({ top: "0px", bottom: "1px", radius: "0px" });
   });
 
-  test("does not see Municipal admins, and is sent to the Dashboard from its address", async ({ page, staff }) => {
+  test("does not see Add admins, and is sent to the Dashboard from its address", async ({ page, staff }) => {
     const asked = [];
     page.on("request", request => { if (request.url().includes("/api/admin/staff")) asked.push(request.url()); });
     await page.goto("/admin#/admins");
@@ -862,12 +862,12 @@ test.describe("owner", () => {
   test.skip(needsSuper, "E2E_SUPER_EMAIL and E2E_SUPER_PASSWORD are not set");
   test.use(DESKTOP);
 
-  test("[super] Municipal admins lists staff and gives super admins no actions", async ({ page }) => {
+  test("[super] Add admins lists staff and gives super admins no actions", async ({ page }) => {
     await page.goto("/admin");
     const side = page.getByRole("navigation", { name: "Admin sections" });
-    await expect(side.getByRole("link")).toHaveText(["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log", "Municipal admins", "Cleanup Verification", "Moderation"]);
-    await side.getByRole("link", { name: "Municipal admins" }).click();
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Municipal admins");
+    await expect(side.getByRole("link")).toHaveText(["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log", "Add admins", "Cleanup Verification", "Moderation"]);
+    await side.getByRole("link", { name: "Add admins" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Add admins");
     await expect(page).toHaveURL(/#\/admins$/);
     await expect(page.getByRole("columnheader")).toHaveText(["Email", "Municipality", "Status", "Created", "Actions"]);
     const rows = page.locator(".adm-table tbody tr");
@@ -882,7 +882,7 @@ test.describe("owner", () => {
     await expect(rows.filter({ hasText: "former@example.test" }).getByRole("button", { name: "Reactivate" })).toBeVisible();
     // a refresh stays on the page
     await page.reload();
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Municipal admins");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Add admins");
   });
 
   test("[super] adds a municipal admin: one-time panel, copy, and the password is cleared on dismiss", async ({ page, context, staff }) => {
@@ -1029,20 +1029,58 @@ test.describe("owner", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Dashboard");
     const selector = page.getByLabel("Municipality");
     await expect(selector).toBeVisible();
-    await expect(selector.locator("option:checked")).toContainText("Jorhat");
-    await expect(page.getByRole("navigation", { name: "Admin sections" }).getByRole("link")).toHaveText(["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log", "Municipal admins", "Cleanup Verification", "Moderation"]);
+    await expect(selector.locator("option:checked")).toHaveText("View all");
+    await expect(selector.locator("option")).toContainText(["View all", "Jorhat Municipal Board"]);
+    await expect(page.getByRole("navigation", { name: "Admin sections" }).getByRole("link")).toHaveText(["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log", "Add admins", "Cleanup Verification", "Moderation"]);
     await expect(page.locator(".adm-tile", { hasText: "Total" }).locator(".adm-tile-value")).not.toHaveText("0");
     await page.getByRole("button", { name: "Account" }).click();
     await expect(page.getByRole("dialog", { name: "Account" })).toContainText("Super admin");
     await page.keyboard.press("Escape");
     // the table, tabs and Hidden list work for the owner too
     await page.getByRole("link", { name: "Reports", exact: true }).click();
-    await expect(page.getByRole("tab")).toHaveText([/^All reports \d+$/, /^Unassigned wards \d+$/, /^Active \d+$/, /^In progress \d+$/, /^Cleaned \d+$/, /^Hidden \d+$/]);
+    await expect(page.getByRole("tab")).toHaveText([/^All reports \d+$/, /^Active \d+$/, /^In progress \d+$/, /^Cleaned \d+$/, /^Hidden \d+$/]);
     await expect(page.locator(".adm-pager span").first()).toContainText("of");
     await page.getByRole("tab", { name: "Hidden" }).click();
     await expect(page.getByRole("heading", { name: /^Hidden \(\d+\)$/ })).toBeVisible();
     await page.getByRole("link", { name: "Cleanup Verification" }).click();
     await expect(page.getByRole("heading", { name: /Cleanup Proofs/ })).toBeVisible();
+  });
+
+  test("[super] View all has a District filter and no ward tab, filter or column", async ({ page }) => {
+    await page.goto("/admin#/reports");
+    await expect(page.getByRole("tab", { name: /Unassigned wards/ })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Ward" })).toHaveCount(0);
+    await expect(page.getByRole("columnheader", { name: "District" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Ward" })).toHaveCount(0);
+    const district = page.getByRole("combobox", { name: "District" });
+    await district.click();
+    await page.getByRole("listbox").getByRole("option").first().click();
+    await expect(page.getByRole("button", { name: "Clear filters" }).first()).toBeVisible();
+    await page.getByRole("link", { name: "Dashboard" }).click();
+    await expect(page.locator(".adm-tile", { hasText: "Unassigned wards" })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Districts" }).getByRole("heading")).toContainText(/Districts \(\d+\)/);
+    await expect(page.locator(".adm-districts li").first()).toBeVisible();
+    await page.getByLabel("Municipality").first().selectOption({ label: "Jorhat Municipal Board" });
+    await expect(page.locator(".adm-tile", { hasText: "Unassigned wards" })).toHaveCount(1);
+    await expect(page.getByRole("region", { name: "Districts" })).toHaveCount(0);
+    await page.getByRole("link", { name: "Reports", exact: true }).click();
+    await expect(page.getByRole("tab", { name: /Unassigned wards/ })).toHaveCount(1);
+    await expect(page.getByRole("combobox", { name: "District" })).toHaveCount(0);
+  });
+
+  test("[super] Add admins stays in the menu for every choice, and Hotspots needs a municipality", async ({ page }) => {
+    await page.goto("/admin");
+    const side = page.getByRole("navigation", { name: "Admin sections" });
+    await page.getByRole("link", { name: "Hotspots" }).click();
+    await expect(page.getByText(/Choose a municipality above/)).toBeVisible();
+    await side.getByRole("link", { name: "Add admins" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Add admins");
+    await page.getByLabel("Municipality").first().selectOption({ label: "Jorhat Municipal Board" });
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Add admins");
+    await expect(side.getByRole("link", { name: "Add admins" })).toHaveCount(1);
+    await page.getByRole("link", { name: "Hotspots" }).click();
+    await expect(page.getByText(/Choose a municipality above/)).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Hotspots");
   });
 });
 
@@ -1214,11 +1252,11 @@ test.describe("owner on a 360px phone", () => {
     }
   });
 
-  test("[super] Municipal admins fits and works on a phone", async ({ page, staff }) => {
+  test("[super] Add admins fits and works on a phone", async ({ page, staff }) => {
     await page.goto("/admin");
     await page.getByRole("button", { name: "Menu", exact: true }).click();
-    await page.getByRole("navigation", { name: "Admin sections" }).getByRole("link", { name: "Municipal admins" }).click();
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Municipal admins");
+    await page.getByRole("navigation", { name: "Admin sections" }).getByRole("link", { name: "Add admins" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Add admins");
     const noSideways = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
     expect(await noSideways()).toBe(true);
     await expect(page.locator(".adm-table tbody tr").first()).toBeVisible();

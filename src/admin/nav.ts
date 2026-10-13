@@ -12,7 +12,7 @@ export const NAV: NavItem[] = [
   { id: "hotspots", label: "Hotspots", icon: "hotspots" },
   { id: "monthly", label: "Monthly report", icon: "monthly" },
   { id: "audit", label: "Audit log", icon: "audit" },
-  { id: "admins", label: "Municipal admins", icon: "users", roles: ["super_admin"] },
+  { id: "admins", label: "Add admins", icon: "users", roles: ["super_admin"] },
 ];
 
 export const navFor = (role: Role, extra: { id: string; label: string }[] = []): NavItem[] => [

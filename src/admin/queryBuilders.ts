@@ -68,6 +68,7 @@ export function reportConditions(filters: Filters, now: Date, overdueDays: numbe
     if (filters.ward === "unassigned") conditions.push("ward_id.is.null");
     else if (filters.ward) conditions.push(`ward_id.eq.${filters.ward}`);
   }
+  if (cleanSearch(filters.district)) conditions.push(`district.eq."${cleanSearch(filters.district)}"`);
   if (filters.from) conditions.push(`created_at.gte.${dayStart(filters.from)}`);
   if (filters.to) conditions.push(`created_at.lte.${dayEnd(filters.to)}`);
   const text = cleanSearch(filters.q);
@@ -121,6 +122,9 @@ export const patchReportEnvelope = (id: string, body: Record<string, unknown>): 
 // ── Reference data ───────────────────────────────────────────────────────────
 export const wardsEnvelope = (scope: Scope): Envelope => ({ path: `/rest/v1/wards?${query(scoped(scope, [["select", "id,number,name"], ["order", "number"], ["limit", "100"]]))}`, method: "GET" });
 export const municipalitiesEnvelope = (): Envelope => ({ path: `/rest/v1/municipalities?${query([["select", "id,slug,name,settings"], ["order", "name"], ["limit", "100"]])}`, method: "GET" });
+
+// The districts reports come from, for the District filter in View all (read from the reports; duplicates are removed on the page).
+export const districtsEnvelope = (scope: Scope): Envelope => ({ path: `/rest/v1/reports?${query(scoped(scope, [["select", "district"], ["district", "not.is.null"], ["order", "created_at.desc"], ["limit", "1000"]]))}`, method: "GET" });
 
 // ── The audit log ────────────────────────────────────────────────────────────
 export type AuditFilters = { from: string; to: string; actor: string; action: string };
