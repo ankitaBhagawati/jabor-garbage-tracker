@@ -45,8 +45,17 @@ function registerServiceWorker() {
   });
 }
 
+// /privacy and /terms are plain reading pages, loaded without the app.
+const LEGAL = { "/privacy": "PRIVACY", "/terms": "TERMS" };
+
 async function boot() {
   try {
+    const legal = LEGAL[window.location.pathname.replace(/\/+$/, "")];
+    if (legal) {
+      const [{ default: LegalPage }, content] = await Promise.all([import("./legal/LegalPage.tsx"), import("./legal/content.ts")]);
+      root.render(<React.StrictMode><ErrorBoundary><LegalPage doc={content[legal]} /></ErrorBoundary></React.StrictMode>);
+      return;
+    }
     const { default: Jabor } = await import("../Jabor.jsx");
     root.render(
       <React.StrictMode>
