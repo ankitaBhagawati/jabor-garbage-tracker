@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { adminRequest, downloadCsv } from "./adminApi.ts";
 import { ACTION_LABEL, actorLabel, describeAudit, formatDateTime } from "./format.ts";
 import { EMPTY_AUDIT_FILTERS, PAGE_SIZE, auditExportEnvelope, auditFiltersActive, auditPageEnvelope, type AuditFilters, type Scope } from "./queryBuilders.ts";
+import { DateField, FilterPanel, SelectField, TextField } from "./Filters.tsx";
+import { Icon } from "./icons.tsx";
 import { EmptyBox, ErrorBox, Pager } from "./Pieces.tsx";
 import type { AuditRow, Ward } from "./types.ts";
 import { useAsync } from "./useAsync.ts";
@@ -48,34 +50,22 @@ export default function AuditLog({ scope, wards, version, onOpenReport }: Props)
   };
 
   return (
-    <section aria-label="Audit log" className="adm-panel">
-      <p className="adm-muted adm-intro">Every change to a report, newest first. This list cannot be edited.</p>
-      <div className="adm-filters">
-        <div className="adm-field">
-          <label htmlFor="a-action">Action</label>
-          <select id="a-action" className="inp" value={filters.action} onChange={e => { const value = e.target.value; setFilters(f => ({ ...f, action: value })); }}>
-            <option value="">All actions</option>
-            {Object.entries(ACTION_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-        </div>
-        <div className="adm-field adm-field-search">
-          <label htmlFor="a-actor">Done by</label>
-          <input id="a-actor" className="inp" type="search" value={actor} placeholder="Email, public or system" maxLength={80} onChange={e => setActor(e.target.value)} />
-        </div>
-        <div className="adm-field">
-          <label htmlFor="a-from">From</label>
-          <input id="a-from" className="inp" type="date" value={filters.from} max={filters.to || undefined} onChange={e => { const value = e.target.value; setFilters(f => ({ ...f, from: value })); }} />
-        </div>
-        <div className="adm-field">
-          <label htmlFor="a-to">To</label>
-          <input id="a-to" className="inp" type="date" value={filters.to} min={filters.from || undefined} onChange={e => { const value = e.target.value; setFilters(f => ({ ...f, to: value })); }} />
-        </div>
-        {filtersActive && <button type="button" className="btn-s adm-clear" onClick={clear}>Clear filters</button>}
-        <button type="button" className="btn-s adm-export" disabled={exporting} onClick={exportCsv}>{exporting ? "Preparing…" : exportFiltered ? "Export filtered CSV" : "Export all CSV"}</button>
-      </div>
+    <>
+      <FilterPanel
+        title="Search and filter"
+        actions={<button type="button" className="btn-s adm-export" disabled={exporting} onClick={exportCsv}><Icon name="download" size={18} /> {exporting ? "Preparing…" : exportFiltered ? "Export filtered CSV" : "Export all CSV"}</button>}
+        footer={filtersActive ? <button type="button" className="btn-s adm-clear" onClick={clear}>Clear filters</button> : null}
+      >
+        <SelectField label="Action" value={filters.action} placeholder="All actions" options={Object.entries(ACTION_LABEL).map(([value, label]) => ({ value, label }))} onChange={value => setFilters(f => ({ ...f, action: value }))} />
+        <TextField label="Done by" value={actor} onChange={setActor} placeholder="Email, public or system" />
+        <DateField label="From" value={filters.from} max={filters.to || undefined} onChange={value => setFilters(f => ({ ...f, from: value }))} />
+        <DateField label="To" value={filters.to} min={filters.from || undefined} onChange={value => setFilters(f => ({ ...f, to: value }))} />
+      </FilterPanel>
       {exportFiltered && <p className="adm-muted adm-export-line">Exports only the rows matching your filters</p>}
       {exportMessage && <p className={`adm-message adm-message-${exportMessage.kind === "error" ? "error" : exportMessage.kind === "notice" ? "info" : "ok"}`} role={exportMessage.kind === "error" ? "alert" : "status"}>{exportMessage.text}</p>}
 
+    <section aria-label="Audit log" className="adm-panel">
+      <p className="adm-muted adm-intro">Every change to a report, newest first. This list cannot be edited.</p>
       {list.error ? (
         <ErrorBox message={list.error} onRetry={list.reload} />
       ) : list.loading && list.data === undefined ? (
@@ -112,5 +102,6 @@ export default function AuditLog({ scope, wards, version, onOpenReport }: Props)
       )}
       {!list.error && (rows.length > 0 || page > 1) && <Pager page={page} pageSize={PAGE_SIZE} total={list.data?.total ?? null} busy={list.loading} onPage={setPage} />}
     </section>
+    </>
   );
 }

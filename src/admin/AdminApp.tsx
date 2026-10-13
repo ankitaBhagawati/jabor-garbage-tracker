@@ -5,6 +5,7 @@ import AuditLog from "./AuditLog.tsx";
 import Dashboard from "./Dashboard.tsx";
 import Hotspots from "./Hotspots.tsx";
 import MonthlyReport from "./MonthlyReport.tsx";
+import PhotoViewer from "./PhotoViewer.tsx";
 import { Icon } from "./icons.tsx";
 import { navFor, roleBadge } from "./nav.ts";
 import Reports from "./Reports.tsx";
@@ -187,14 +188,7 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
         <ReportDrawer key={openReport} reportId={openReport} wards={wardList} overdueDays={overdueDays} onClose={() => setOpenReport(null)} onChanged={changed} onPhotoClick={setPhoto} />
       )}
 
-      {photo && (
-        <div className="admin-photo-modal" onClick={() => setPhoto("")}>
-          <div className="admin-photo-modal-inner" onClick={e => e.stopPropagation()}>
-            <button className="admin-photo-close" onClick={() => setPhoto("")} aria-label="Close photo preview">×</button>
-            <img src={photo} alt="Enlarged report" />
-          </div>
-        </div>
-      )}
+      {photo && <PhotoViewer url={photo} onClose={() => setPhoto("")} />}
     </div>
   );
 }

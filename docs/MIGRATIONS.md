@@ -18,7 +18,7 @@ The CLI keeps the linked project in `supabase/.temp/` (gitignored). Check it bef
 ```bash
 cat supabase/.temp/project-ref
 ```
-
+ƒˇ
 It must print the staging ref. To relink:
 
 ```bash

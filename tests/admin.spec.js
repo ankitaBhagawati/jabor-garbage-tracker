@@ -15,6 +15,11 @@ const SUPER = { email: process.env.E2E_SUPER_EMAIL, password: process.env.E2E_SU
 const BOM = String.fromCharCode(0xfeff);
 const DESKTOP = { viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false };
 const PHONE = { viewport: { width: 360, height: 640 } };
+// The filter selects are the shared Select (a button that opens a list), not a native select.
+const combo = (page, label) => page.getByRole("combobox", { name: new RegExp(`^${label}\\b`) });
+const choose = async (page, label, option) => { await combo(page, label).click(); await page.getByRole("option", { name: option, exact: true }).click(); };
+const clearField = (page, label) => page.getByRole("button", { name: `Clear ${label.toLowerCase()}` });
+const STATUS_TEXT = { active: "Active", in_progress: "In progress", cleaned: "Cleaned", invalid: "Invalid", auto_cleaned: "Auto-cleaned" };
 const READ = new Set(["GET", "HEAD", "OPTIONS"]);
 // The monthly report and the hotspot ranking are database functions called with POST, but they only read.
 const READ_RPC = /^\/rest\/v1\/rpc\/(monthly_ward_report|ward_hotspots)$/;
@@ -180,7 +185,7 @@ test.describe("municipality admin", () => {
       await page.goto("/admin#/dashboard");
       await page.locator(".adm-tile").filter({ has: page.getByText(name, { exact: true }) }).click();
       await expect(page).toHaveURL(new RegExp(`status=${status}`));
-      await expect(page.getByLabel("Status", { exact: true })).toHaveValue(status);
+      await expect(combo(page, "Status")).toContainText(STATUS_TEXT[status]);
       if (expected === 0) await expect(page.getByText(/There are no reports|No reports match/)).toBeVisible();
       else await expect(pager).toContainText(`of ${expected}`);
     }
@@ -205,8 +210,8 @@ test.describe("municipality admin", () => {
     await page.locator(".adm-tile").filter({ has: page.getByText("Unassigned wards", { exact: true }) }).click();
     const pager = page.locator(".adm-pager span").first();
     if (unassigned > 0) await expect(pager).toContainText(`of ${unassigned}`);
-    await expect(page.getByLabel("Ward", { exact: true })).toHaveCount(0); // the tab is the ward filter
-    await expect(page.getByLabel("Status", { exact: true })).toHaveCount(0);
+    await expect(combo(page, "Ward")).toHaveCount(0); // the tab is the ward filter
+    await expect(combo(page, "Status")).toHaveCount(0);
     await expect.poll(async () => {
       const cells = await page.locator(".adm-table tbody tr td:last-child").allInnerTexts();
       return cells.length > 0 && cells.every(cell => cell.includes("Unassigned"));
@@ -217,23 +222,26 @@ test.describe("municipality admin", () => {
   test("the Reports page: tabs, filters, paging and sorting", async ({ page }) => {
     await page.goto("/admin#/reports");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Reports");
-    await expect(page.getByRole("tab")).toHaveText(["All reports", "Unassigned wards", "Active", "In progress", "Cleaned", "Hidden"]);
+    await expect(page.getByRole("tab")).toHaveText([/^All reports \d+$/, /^Unassigned wards \d+$/, /^Active \d+$/, /^In progress \d+$/, /^Cleaned \d+$/, /^Hidden \d+$/]);
     const pager = page.locator(".adm-pager span").first();
     await expect(pager).toContainText("Showing 1 to");
     const total = Number(/of (\d+)/.exec(await pager.innerText())?.[1]);
     expect(total).toBeGreaterThan(0);
 
     // status filter lives on All reports; Invalid is reachable there
-    await page.getByLabel("Status", { exact: true }).selectOption("active");
-    await expect(page.locator(".adm-table tbody .adm-badge-active")).toHaveCount(await page.locator(".adm-table tbody tr").count());
-    await page.getByLabel("Status", { exact: true }).selectOption("invalid");
+    await choose(page, "Status", "Active");
+    await expect(page.locator(".adm-table tbody .adm-badge-active").first()).toBeVisible();
+    await expect.poll(async () => (await page.locator(".adm-table tbody .adm-badge-active").count()) === (await page.locator(".adm-table tbody tr").count())).toBe(true);
+    await choose(page, "Status", "Invalid");
     await expect(page.locator(".adm-table tbody .adm-badge-invalid").first()).toBeVisible();
-    await page.getByLabel("Status", { exact: true }).selectOption("");
+    await clearField(page, "Status").click();
+    await expect(combo(page, "Status")).toContainText("All statuses");
+    await expect(clearField(page, "Status")).toHaveCount(0);
 
     // the Active tab and the Overdue filter
     await page.getByRole("tab", { name: "Active" }).click();
     await expect(page).toHaveURL(/#\/reports\/active$/);
-    await expect(page.getByLabel("Status", { exact: true })).toHaveCount(0);
+    await expect(combo(page, "Status")).toHaveCount(0);
     await page.getByLabel("Overdue only").check();
     await expect(page.locator(".adm-table tbody tr").first()).toBeVisible();
     await expect.poll(async () => (await page.locator(".adm-table tbody tr").count()) === (await page.locator(".adm-badge-overdue").count())).toBe(true);
@@ -243,13 +251,13 @@ test.describe("municipality admin", () => {
     await page.getByRole("button", { name: "Clear filters" }).click();
 
     // ward filter, search, paging, sorting
-    await page.getByLabel("Ward", { exact: true }).selectOption("unassigned");
+    await choose(page, "Ward", "Unassigned");
     await expect.poll(async () => {
       const cells = await page.locator(".adm-table tbody tr td:last-child").allInnerTexts();
       return cells.length > 0 && cells.every(cell => cell.includes("Unassigned"));
     }).toBe(true);
     await page.getByRole("button", { name: "Clear filters" }).click();
-    await page.getByLabel("Search").fill("zzzz-nothing-matches-this");
+    await page.getByLabel("Search", { exact: true }).fill("zzzz-nothing-matches-this");
     await expect(page.getByText("No reports match these filters.")).toBeVisible();
     await page.getByRole("button", { name: "Clear filters" }).first().click();
     await expect(pager).toContainText(`of ${total}`);
@@ -269,7 +277,7 @@ test.describe("municipality admin", () => {
     await page.goto("/admin#/reports");
     const pager = page.locator(".adm-pager span").first();
     for (const [tab, expected] of [["All reports", n.Total], ["Active", n.Active], ["In progress", n["In progress"]], ["Cleaned", n.Cleaned]]) {
-      await page.getByRole("tab", { name: tab, exact: true }).click();
+      await page.getByRole("tab", { name: new RegExp(`^${tab}\\b`) }).click();
       await expect(pager).toContainText(`of ${expected}`);
     }
     // Hidden lists the reports that are off the public site (hidden or invalid): the Invalid tile
@@ -432,7 +440,7 @@ test.describe("municipality admin", () => {
     await expect(pager).toContainText("Showing 1 to");
     const total = Number(/of (\d+)/.exec(await pager.innerText())?.[1]);
 
-    await page.getByLabel("Action").selectOption("status_change");
+    await choose(page, "Action", "Status changed");
     await expect(pager).not.toContainText(`of ${total}`);
     for (const cell of await rows.locator("strong").allInnerTexts()) expect(cell).toBe("Status changed");
 
@@ -454,8 +462,8 @@ test.describe("municipality admin", () => {
   test("the reports export sends only the filters and tells the person what happened", async ({ page, staff }) => {
     await page.goto("/admin#/reports");
     await expect(page.locator(".adm-table tbody tr").first()).toBeVisible();
-    await page.getByLabel("Status", { exact: true }).selectOption("active");
-    await page.getByLabel("Ward", { exact: true }).selectOption("unassigned");
+    await choose(page, "Status", "Active");
+    await choose(page, "Ward", "Unassigned");
     const download = page.waitForEvent("download");
     await page.getByRole("button", { name: "Export CSV" }).click();
     expect((await download).suggestedFilename()).toBe("jabor-reports-test.csv");
@@ -552,7 +560,7 @@ test.describe("municipality admin", () => {
     expect(await page.locator(".adm-main").innerText()).not.toMatch(/\b\d{2}\.\d{4,}\b/);
 
     // a wider window loads without error, and the export has the documented columns
-    await page.getByLabel("Reports from the last").selectOption("90");
+    await choose(page, "Reports from the last", "90 days");
     await expect(rows.first()).toBeVisible();
     await expect(page.locator(".adm-state[role=alert]")).toHaveCount(0);
     const download = page.waitForEvent("download");
@@ -620,7 +628,7 @@ test.describe("municipality admin", () => {
     const listRequest = page.waitForRequest(request => request.url().endsWith("/api/admin/rest") && /audit_log/.test(request.postData() || "") && /action=eq\.status_change/.test(request.postData() || "") && /created_at\.lte/.test(request.postData() || ""));
     await page.getByLabel("From", { exact: true }).fill("2026-09-01");
     await page.getByLabel("To", { exact: true }).fill("2026-10-11");
-    await page.getByLabel("Action").selectOption("status_change");
+    await choose(page, "Action", "Status changed");
     const listEnvelope = JSON.parse((await listRequest).postData());
     await expect(button).toHaveText("Export filtered CSV");
     await expect(page.getByText("Exports only the rows matching your filters")).toBeVisible();
@@ -730,6 +738,114 @@ test.describe("municipality admin", () => {
     expect(writes).toHaveLength(1);
     expect(writes[0].body).toEqual({ is_deleted: false, invalid_reason: null, admin_note: "Hidden by mistake" });
     await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
+  test("every filter has a cross that clears just that filter, and Clear filters clears them all", async ({ page }) => {
+    await page.goto("/admin#/reports");
+    await expect(page.locator(".adm-table tbody tr").first()).toBeVisible();
+    const pager = page.locator(".adm-pager span").first();
+    const total = Number(/of (\d+)/.exec(await pager.innerText())?.[1]);
+    // nothing is set, so there is nothing to clear
+    for (const label of ["Search", "Status", "Ward", "From", "To"]) await expect(clearField(page, label)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Clear filters" })).toHaveCount(0);
+
+    await page.getByLabel("Search", { exact: true }).fill("Demo");
+    await choose(page, "Status", "Active");
+    await choose(page, "Ward", "Unassigned");
+    await page.getByLabel("From", { exact: true }).fill("2026-09-01");
+    await page.getByLabel("To", { exact: true }).fill("2026-10-30");
+    for (const label of ["Search", "Status", "Ward", "From", "To"]) await expect(clearField(page, label)).toBeVisible();
+
+    // each cross removes its own filter and leaves the others
+    await clearField(page, "Search").click();
+    await expect(page.getByLabel("Search", { exact: true })).toHaveValue("");
+    await expect(combo(page, "Status")).toContainText("Active");
+    await clearField(page, "From").click();
+    await expect(page.getByLabel("From", { exact: true })).toHaveValue("");
+    await expect(page.getByLabel("To", { exact: true })).toHaveValue("2026-10-30");
+    await clearField(page, "Ward").click();
+    await expect(combo(page, "Ward")).toContainText("All wards");
+    await expect(combo(page, "Status")).toContainText("Active");
+    await clearField(page, "To").click();
+    await expect(clearField(page, "To")).toHaveCount(0);
+    await clearField(page, "Status").click();
+    await expect(page.getByRole("button", { name: "Clear filters" })).toHaveCount(0); // all clear again
+    await expect(pager).toContainText(`of ${total}`);
+
+    // the same, all at once
+    await page.getByLabel("Search", { exact: true }).fill("Demo");
+    await choose(page, "Ward", "Unassigned");
+    await page.getByLabel("From", { exact: true }).fill("2026-09-01");
+    await page.getByRole("button", { name: "Clear filters" }).click();
+    await expect(page.getByLabel("Search", { exact: true })).toHaveValue("");
+    await expect(combo(page, "Ward")).toContainText("All wards");
+    await expect(page.getByLabel("From", { exact: true })).toHaveValue("");
+    await expect(pager).toContainText(`of ${total}`);
+  });
+
+  test("the sort choice changes the order the list asks for", async ({ page }) => {
+    const asked = [];
+    page.on("request", request => { const body = request.postData() || ""; if (request.url().endsWith("/api/admin/rest") && /reports\?/.test(body) && /count=exact/.test(body) && /limit=25/.test(body)) asked.push(JSON.parse(body).path); });
+    await page.goto("/admin#/reports");
+    await expect(combo(page, "Sort")).toContainText("Newest first");
+    await expect(clearField(page, "Sort")).toHaveCount(0); // sorting is not a filter
+    await choose(page, "Sort", "Oldest first");
+    await expect.poll(() => asked.some(path => decodeURIComponent(path).includes("order=created_at.asc"))).toBe(true);
+    await choose(page, "Sort", "Report name, A to Z");
+    await expect.poll(() => asked.some(path => decodeURIComponent(path).includes("order=area.asc"))).toBe(true);
+    await expect(page.locator("th[aria-sort=ascending]")).toHaveCount(1);
+    // a column header changes the same setting
+    await choose(page, "Sort", "Newest first");
+    await expect(combo(page, "Sort")).toContainText("Newest first");
+  });
+
+  test("the numbers on the tabs are the dashboard's numbers", async ({ page }) => {
+    await page.goto("/admin");
+    const tile = name => page.locator(".adm-tile").filter({ has: page.getByText(name, { exact: true }) }).locator(".adm-tile-value");
+    await expect(page.locator(".adm-tile .adm-tile-value").filter({ hasText: /^\d+$/ })).toHaveCount(8);
+    const n = {};
+    for (const name of ["Total", "Unassigned wards", "Active", "In progress", "Cleaned", "Invalid"]) n[name] = (await tile(name).innerText()).trim();
+    await page.goto("/admin#/reports");
+    await expect(page.getByTestId("count-all")).toHaveText(n.Total);
+    await expect(page.getByTestId("count-unassigned")).toHaveText(n["Unassigned wards"]);
+    await expect(page.getByTestId("count-active")).toHaveText(n.Active);
+    await expect(page.getByTestId("count-in_progress")).toHaveText(n["In progress"]);
+    await expect(page.getByTestId("count-cleaned")).toHaveText(n.Cleaned);
+    await expect(page.getByTestId("count-hidden")).toHaveText(n.Invalid);
+  });
+
+  test("clicking a photo enlarges it, with a cross to close it", async ({ page }) => {
+    await page.goto("/admin#/reports");
+    const thumb = page.locator(".adm-thumbbtn").first();
+    await expect(thumb).toBeVisible();
+    await thumb.click();
+    const viewer = page.getByRole("dialog", { name: "Photo" });
+    await expect(viewer).toBeVisible();
+    await expect(page.getByRole("dialog", { name: /.+/ }).filter({ has: page.locator("h3") })).toHaveCount(0); // the report drawer did not open
+    const image = viewer.getByRole("img", { name: "Report photo, enlarged" });
+    await expect(image).toBeVisible();
+    await expect.poll(async () => (await image.boundingBox()).width).toBeGreaterThan(56 * 3); // bigger than the thumbnail
+    const close = viewer.getByRole("button", { name: "Close photo" });
+    expect((await close.boundingBox()).width).toBeGreaterThanOrEqual(44);
+    await close.click();
+    await expect(viewer).toHaveCount(0);
+    // Esc closes it too, and a click on the dark area
+    await thumb.click();
+    await expect(viewer).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(viewer).toHaveCount(0);
+    await thumb.click();
+    await page.mouse.click(5, 5);
+    await expect(viewer).toHaveCount(0);
+    // from the report drawer: the photo opens above the drawer, and closing it leaves the drawer open
+    await page.locator(".adm-table tbody .adm-link").first().click();
+    const drawer = page.getByRole("dialog").filter({ has: page.getByRole("heading", { level: 3, name: "History" }) });
+    await expect(drawer).toBeVisible();
+    await drawer.locator(".adm-photo").first().click();
+    await expect(viewer).toBeVisible();
+    await viewer.getByRole("button", { name: "Close photo" }).click();
+    await expect(viewer).toHaveCount(0);
+    await expect(drawer).toBeVisible();
   });
 
   test("the proxy refuses a municipality, a window or a month it does not allow", async ({ page }) => {
@@ -921,7 +1037,7 @@ test.describe("owner", () => {
     await page.keyboard.press("Escape");
     // the table, tabs and Hidden list work for the owner too
     await page.getByRole("link", { name: "Reports", exact: true }).click();
-    await expect(page.getByRole("tab")).toHaveText(["All reports", "Unassigned wards", "Active", "In progress", "Cleaned", "Hidden"]);
+    await expect(page.getByRole("tab")).toHaveText([/^All reports \d+$/, /^Unassigned wards \d+$/, /^Active \d+$/, /^In progress \d+$/, /^Cleaned \d+$/, /^Hidden \d+$/]);
     await expect(page.locator(".adm-pager span").first()).toContainText("of");
     await page.getByRole("tab", { name: "Hidden" }).click();
     await expect(page.getByRole("heading", { name: /^Hidden \(\d+\)$/ })).toBeVisible();
@@ -1019,6 +1135,45 @@ test.describe("municipality admin on a 360px phone", () => {
     await page.locator(".adm-table tbody .adm-link").first().click();
     await expect(page.getByRole("dialog")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), "the report drawer").toBe(true);
+  });
+
+  test("the filter panel is one column, every control is tap-sized, and the photo viewer fits", async ({ page }) => {
+    await page.goto("/admin#/reports");
+    await expect(page.locator(".adm-table tbody tr").first()).toBeVisible();
+    const noSideways = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+    expect(await noSideways()).toBe(true);
+    const panel = page.getByRole("region", { name: "Search, sort and filter" });
+    await expect(panel.getByRole("button", { name: "Export CSV" })).toBeVisible();
+    // one column: the fields sit one under the other and fill the width
+    const search = await page.getByLabel("Search", { exact: true }).boundingBox();
+    const sort = await combo(page, "Sort").boundingBox();
+    const status = await combo(page, "Status").boundingBox();
+    expect(sort.y).toBeGreaterThan(search.y + search.height - 1);
+    expect(status.y).toBeGreaterThan(sort.y + sort.height - 1);
+    for (const box of [search, sort, status]) { expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(360); expect(box.height).toBeGreaterThanOrEqual(44); }
+    // a value brings a cross, and the cross is a tap-sized target inside the field
+    await page.getByLabel("Search", { exact: true }).fill("Demo");
+    const cross = await clearField(page, "Search").boundingBox();
+    expect(cross.width).toBeGreaterThanOrEqual(44);
+    expect(cross.height).toBeGreaterThanOrEqual(44);
+    expect(cross.x + cross.width).toBeLessThanOrEqual(search.x + search.width + 1);
+    await choose(page, "Ward", "Unassigned");
+    await page.getByLabel("From", { exact: true }).fill("2026-09-01");
+    expect(await noSideways()).toBe(true);
+    for (const label of ["Search", "Ward", "From"]) { const box = await clearField(page, label).boundingBox(); expect(box.width).toBeGreaterThanOrEqual(44); }
+    await page.getByRole("button", { name: "Clear filters" }).click();
+    await expect(page.getByRole("button", { name: "Clear filters" })).toHaveCount(0);
+    // the photo viewer fits the screen
+    await page.locator(".adm-thumbbtn").first().click();
+    const viewer = page.getByRole("dialog", { name: "Photo" });
+    await expect(viewer).toBeVisible();
+    const image = await viewer.getByRole("img").boundingBox();
+    expect(image.x).toBeGreaterThanOrEqual(0);
+    expect(image.x + image.width).toBeLessThanOrEqual(360);
+    expect(image.y + image.height).toBeLessThanOrEqual(640);
+    expect((await viewer.getByRole("button", { name: "Close photo" }).boundingBox()).x + 44).toBeLessThanOrEqual(360 + 1);
+    await viewer.getByRole("button", { name: "Close photo" }).click();
+    await expect(viewer).toHaveCount(0);
   });
 
   test("the header, user icon and segmented tabs fit and work", async ({ page }) => {
