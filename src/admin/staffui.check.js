@@ -113,4 +113,22 @@ for (const action of ["staff_account_created", "staff_account_activated", "staff
   assert.ok(!line.includes("\u2014"));
 }
 
+// ── the Audit log page's Action filter, by role ──────────────────────────────
+const optionsFor = role => F.auditActionOptions(role).map(o => o.value);
+assert.deepEqual(optionsFor("super_admin"), Object.keys(F.ACTION_LABEL), "a super admin is offered every action, as before");
+for (const action of ["export", "staff_created", "staff_changed", "staff_deleted", "staff_account_created", "staff_account_activated", "staff_account_deactivated"]) {
+  assert.ok(optionsFor("super_admin").includes(action), `super_admin: ${action}`);
+  assert.ok(!optionsFor("municipality_admin").includes(action), `municipality_admin is not offered ${action}`);
+}
+assert.deepEqual(optionsFor("municipality_admin"), ["report_created", "status_change", "ward_change", "assignment_change", "cleaned_details_change", "note_change", "hidden", "unhidden"]);
+assert.ok(!optionsFor("municipality_admin").some(a => /staff|export/.test(a)), "no staff or export action by any name");
+for (const option of F.auditActionOptions("municipality_admin")) assert.equal(option.label, F.ACTION_LABEL[option.value], "the same labels as the rows show");
+// an unknown role is treated as the narrow one
+assert.deepEqual(optionsFor("admin"), optionsFor("municipality_admin"));
+// every action a municipality admin is offered passes the proxy and comes back scoped to report rows
+for (const action of optionsFor("municipality_admin")) {
+  const plan = authorize(MUNI, Q.auditPageEnvelope({ municipalityId: null }, { ...EMPTY_AUDIT_FILTERS, action }, 1));
+  assert.deepEqual(params(plan.path).getAll("entity_type"), ["eq.report"]);
+}
+
 console.log(`staff page logic ok (${checked} export requests checked)`);

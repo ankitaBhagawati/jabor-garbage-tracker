@@ -23,8 +23,8 @@ Columns: `id, date, ward, status, age_days, overdue, cleaned_date, cleaned_by_ty
 - **Limit:** at most **10,000 reports** per export. With more, nothing is exported and the message says to narrow
   the filters (a date range or a ward). A partial file is never sent.
 - **Audit:** each export writes one `audit_log` row (action `export`) with the person, the filters as the server
-  read them and the number of rows. If that row cannot be written, no file is sent. Municipality admins see
-  their own exports in the Audit log tab.
+  read them and the number of rows. If that row cannot be written, no file is sent. Export rows are shown
+  to a super admin only: a municipality admin's Audit log tab holds report rows.
 
 The monthly report and hotspot CSVs are built in the browser from the numbers already on screen (ward totals, no
 report-level data) and are not logged.

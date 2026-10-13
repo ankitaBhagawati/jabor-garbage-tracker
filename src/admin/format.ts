@@ -1,4 +1,4 @@
-import type { AuditRow, Status, Ward } from "./types.ts";
+import type { AuditRow, Role, Status, Ward } from "./types.ts";
 
 export { DAY, LEGACY_ACTIVE, statusOf, ageDays, isOverdue, wardLabel, overdueDaysFrom } from "./rules.js";
 import { statusOf, wardLabel } from "./rules.js";
@@ -21,11 +21,20 @@ const DATE_TIME = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "sho
 export const formatDate = (iso: string | null | undefined) => (iso ? DATE.format(new Date(iso)) : "");
 export const formatDateTime = (iso: string | null | undefined) => (iso ? DATE_TIME.format(new Date(iso)) : "");
 
-export const ACTION_LABEL: Record<string, string> = {
+// What happened to a report. A municipality admin's audit log holds these rows only (api/_lib/access.js).
+const REPORT_ACTION_LABEL: Record<string, string> = {
   report_created: "Report received", status_change: "Status changed", ward_change: "Ward changed", assignment_change: "Assignment changed",
   cleaned_details_change: "Cleaned details changed", note_change: "Note changed", hidden: "Hidden", unhidden: "Restored",
+};
+export const ACTION_LABEL: Record<string, string> = {
+  ...REPORT_ACTION_LABEL,
   export: "Export downloaded", staff_account_created: "Municipal admin added", staff_account_activated: "Municipal admin reactivated", staff_account_deactivated: "Municipal admin deactivated", staff_created: "Staff account created", staff_changed: "Staff account changed", staff_deleted: "Staff account removed",
 };
+
+// The Action filter of the Audit log page. Only a super admin is offered the export and staff actions; an action
+// added to ACTION_LABEL later stays hidden from a municipality admin unless it is a report action.
+export const auditActionOptions = (role: Role) =>
+  Object.entries(role === "super_admin" ? ACTION_LABEL : REPORT_ACTION_LABEL).map(([value, label]) => ({ value, label }));
 
 export const actorLabel = (email: string) => (email === "public" ? "Public (citizen)" : email === "system" ? "System" : email);
 
