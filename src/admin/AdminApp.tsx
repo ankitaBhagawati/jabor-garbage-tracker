@@ -5,7 +5,7 @@ import AuditLog from "./AuditLog.tsx";
 import Dashboard from "./Dashboard.tsx";
 import Hotspots from "./Hotspots.tsx";
 import MonthlyReport from "./MonthlyReport.tsx";
-import PhotoViewer from "./PhotoViewer.tsx";
+import PhotoLightbox from "../ui/PhotoLightbox.tsx";
 import { Icon } from "./icons.tsx";
 import { navFor, roleBadge } from "./nav.ts";
 import Reports from "./Reports.tsx";
@@ -188,7 +188,7 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
         <ReportDrawer key={openReport} reportId={openReport} wards={wardList} overdueDays={overdueDays} onClose={() => setOpenReport(null)} onChanged={changed} onPhotoClick={setPhoto} />
       )}
 
-      {photo && <PhotoViewer url={photo} onClose={() => setPhoto("")} />}
+      {photo && <PhotoLightbox url={photo} onClose={() => setPhoto("")} />}
     </div>
   );
 }
