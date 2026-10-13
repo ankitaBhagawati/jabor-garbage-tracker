@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useState, useEffect, useRef } from "react"
 import "./style.css";
 import SupportJaborSection from "./SupportJaborSection";
 import Select from "./src/ui/Select.tsx";
+import PhotoLightbox from "./src/ui/PhotoLightbox.tsx";
 import { Glyph, WasteIcon } from "./src/ui/glyphs.tsx";
 import MunicipalityQuestion from "./src/report/MunicipalityQuestion.tsx";
 import { findMunicipality, loadMunicipalities, placementError, placementFields } from "./src/report/placement.ts";
@@ -352,7 +353,14 @@ function reportStatusColor(status) {
 }
 
 // ── REPORT CARD - with thumbnail + MLA/MP on separate lines
-function ReportCard({ r, expanded, onClick, showCleanupAction = false, cleanupOpen, onToggleCleanup, onCleanupSubmitted }) {
+// A photo that opens enlarged when clicked, without opening the report behind it.
+function ZoomPhoto({ url, alt, onPhoto }) {
+  const image = <img src={url} alt={alt} />;
+  if (!onPhoto) return image;
+  return <button type="button" className="photo-zoom" aria-label={`Enlarge photo: ${alt}`} onClick={e => { e.stopPropagation(); onPhoto(url); }}>{image}</button>;
+}
+
+function ReportCard({ r, expanded, onClick, onPhoto, showCleanupAction = false, cleanupOpen, onToggleCleanup, onCleanupSubmitted }) {
   const report = r;
   const w = WASTE.find(t => t.id === report.waste_type) || WASTE[0];
   const isCleaned = report.status === "cleaned";
@@ -362,8 +370,8 @@ function ReportCard({ r, expanded, onClick, showCleanupAction = false, cleanupOp
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
         {report.photo_url ? (
           <div className="report-photo-stack">
-            <img src={report.photo_url} alt="Garbage report" />
-            {isCleaned && report.cleanup_photo_url && <img src={report.cleanup_photo_url} alt="Approved cleanup proof" />}
+            <ZoomPhoto url={report.photo_url} alt="Garbage report" onPhoto={onPhoto} />
+            {isCleaned && report.cleanup_photo_url && <ZoomPhoto url={report.cleanup_photo_url} alt="Approved cleanup proof" onPhoto={onPhoto} />}
           </div>
         ) : (
           <div style={{ width: 58, height: 58, borderRadius: 10, flexShrink: 0, background: w.color + "20", border: `1px solid ${w.color}40`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>
@@ -426,8 +434,8 @@ function ReportCard({ r, expanded, onClick, showCleanupAction = false, cleanupOp
             <>
               {r.cleanup_photo_url && (
                 <div className="cleaned-photo-pair">
-                  {report.photo_url && <figure><img src={report.photo_url} alt="Garbage before cleanup" /><figcaption>Before</figcaption></figure>}
-                  <figure><img src={r.cleanup_photo_url} alt="Area after cleanup" /><figcaption>After</figcaption></figure>
+                  {report.photo_url && <figure><ZoomPhoto url={report.photo_url} alt="Garbage before cleanup" onPhoto={onPhoto} /><figcaption>Before</figcaption></figure>}
+                  <figure><ZoomPhoto url={r.cleanup_photo_url} alt="Area after cleanup" onPhoto={onPhoto} /><figcaption>After</figcaption></figure>
                 </div>
               )}
               <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 10, background: "#D1FAE5", color: "#047857", fontSize: 12, fontWeight: 800 }}>
@@ -1150,6 +1158,7 @@ export default function Jabor() {
   const [submitStep,     setSubmitStep]     = useState("");
   const [submitted,      setSubmitted]      = useState(false);
   const [selReport,      setSelReport]      = useState(null);
+  const [zoomPhoto,      setZoomPhoto]      = useState("");
   const [preview,        setPreview]        = useState(null);
   const [loadingPrev,    setLoadingPrev]    = useState(false);
   const [feedTab,        setFeedTab]        = useState("active");
@@ -1528,9 +1537,11 @@ export default function Jabor() {
         .hero-btns .btn-p, .hero-btns .btn-s { padding:10px 18px; font-size:14px; min-width:0; box-shadow:0 4px 14px rgba(16,185,129,.18); }
         .footer-link { color:#CBD5E1; background:none; border:0; padding:0; text-align:left; font:inherit; font-size:14px; cursor:pointer; }
         .footer-link:hover { color:#6FFBBE; }
+        .photo-zoom { display:block; padding:0; border:0; background:none; border-radius:10px; cursor:zoom-in; line-height:0; width:100%; }
+        .photo-zoom:focus-visible { outline:3px solid #1B6EF3; outline-offset:2px; }
         .report-photo-stack { width:58px; min-width:58px; flex-shrink:0; display:flex; flex-direction:column; gap:4px; }
         .report-photo-stack img { display:block; width:58px; height:58px; border-radius:10px; object-fit:cover; border:1px solid #BBCABF; background:#E8F0E9; }
-        .report-photo-stack img + img { height:34px; border-color:#10B981; }
+        .report-photo-stack > * + * img { height:34px; border-color:#10B981; }
         .cleaned-photo-pair { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
         .cleaned-photo-pair figure { margin:0; }
         .cleaned-photo-pair img { display:block; width:100%; height:130px; object-fit:cover; border-radius:9px; border:1px solid #BBCABF; background:#E8F0E9; }
@@ -1745,6 +1756,7 @@ export default function Jabor() {
                           r={r}
                           expanded
                           onClick={() => setSelReport(r)}
+                    onPhoto={setZoomPhoto}
                           showCleanupAction={feedTab === "active"}
                           cleanupOpen={cleanupOpenId === r.id}
                           onToggleCleanup={() => setCleanupOpenId(id => id === r.id ? "" : r.id)}
@@ -2075,6 +2087,7 @@ export default function Jabor() {
                     r={r}
                     expanded
                     onClick={() => setSelReport(r)}
+                    onPhoto={setZoomPhoto}
                     showCleanupAction={feedTab === "active"}
                     cleanupOpen={cleanupOpenId === r.id}
                     onToggleCleanup={() => setCleanupOpenId(id => id === r.id ? "" : r.id)}
@@ -2098,6 +2111,8 @@ export default function Jabor() {
           <AdminDashboard onChanged={() => loadPublicReports(feedFilters)} />
         )}
 
+        {zoomPhoto && <PhotoLightbox url={zoomPhoto} onClose={() => setZoomPhoto("")} />}
+
         {/* MODAL */}
         {selReport && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 100 }}
@@ -2110,9 +2125,9 @@ export default function Jabor() {
                 <button onClick={() => setSelReport(null)} style={{ background: "none", border: "none", color: "#006C49", cursor: "pointer", fontSize: 22, lineHeight: 1 }}>×</button>
               </div>
               {selReport.photo_url
-                ? <img src={selReport.photo_url} alt="garbage" style={{ width: "100%", borderRadius: 12, marginBottom: 14, maxHeight: 260, objectFit: "cover" }} />
+                ? <button type="button" className="photo-zoom" style={{ marginBottom: 14 }} aria-label="Enlarge photo: garbage" onClick={() => setZoomPhoto(selReport.photo_url)}><img src={selReport.photo_url} alt="garbage" style={{ width: "100%", borderRadius: 12, maxHeight: 260, objectFit: "cover" }} /></button>
                 : <div style={{ width: "100%", borderRadius: 12, marginBottom: 14, minHeight: 140, background: "#E8F0E9", border: "1px solid #BBCABF", color: "#3C4A42", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800 }}>No report image</div>}
-              {selReport.cleanup_photo_url && <img src={selReport.cleanup_photo_url} alt="approved cleanup proof" style={{ width: "100%", borderRadius: 12, marginBottom: 14, maxHeight: 260, objectFit: "cover", border: "2px solid #10B981" }} />}
+              {selReport.cleanup_photo_url && <button type="button" className="photo-zoom" style={{ marginBottom: 14 }} aria-label="Enlarge photo: approved cleanup proof" onClick={() => setZoomPhoto(selReport.cleanup_photo_url)}><img src={selReport.cleanup_photo_url} alt="approved cleanup proof" style={{ width: "100%", borderRadius: 12, maxHeight: 260, objectFit: "cover", border: "2px solid #10B981" }} /></button>}
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                 <WIcon type={selReport.waste_type} size={18} />
                 <span style={{ fontWeight: 700, fontSize: 15 }}>{selReport.constituency}</span>
