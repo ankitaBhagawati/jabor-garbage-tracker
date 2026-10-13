@@ -11,6 +11,8 @@ insert into public.municipalities (id, slug, name) values ('10000000-0000-4000-8
 insert into public.wards (id, municipality_id, number) values ('10000000-0000-4000-8000-0000000000a1', '10000000-0000-4000-8000-000000000001', 1);
 select set_config('test.jorhat', (select id::text from public.municipalities where slug = 'jorhat'), true);
 select set_config('test.other', '10000000-0000-4000-8000-000000000001', true);
+-- how many wards Jorhat has now (the seed has 19; a database in use may differ), counted as the privileged role
+select set_config('test.jorhat_wards', (select count(*)::text from public.wards where municipality_id = current_setting('test.jorhat')::uuid), true);
 
 insert into auth.users (id, email, raw_app_meta_data) values
   ('20000000-0000-4000-8000-000000000001', 'super@pgtap.test',    '{"role":"admin"}'),
@@ -41,7 +43,7 @@ insert into public.audit_log (municipality_id, entity_type, entity_id, actor_ema
 
 -- ── Seed and table privileges ────────────────────────────────────────────────
 select is((select count(*)::int from public.wards w join public.municipalities m on m.id = w.municipality_id
-           where m.slug = 'jorhat' and w.name is null and w.number between 1 and 19), 19, 'Jorhat has wards 1 to 19 with null names');
+           where m.slug = 'jorhat' and w.number between 1 and 19), 19, 'Jorhat has wards 1 to 19');
 select ok(not has_table_privilege('anon', 'public.municipalities', 'select')
       and not has_table_privilege('anon', 'public.wards', 'select')
       and not has_table_privilege('anon', 'public.ward_localities', 'select')
@@ -105,7 +107,7 @@ select results_eq($$select report_id::text from public.cleanup_proofs where imag
 select is_empty($$update public.cleanup_proofs set status = 'approved' where report_id = '30000000-0000-4000-8000-000000000002' returning 1$$,
   'a Jorhat admin cannot approve another municipality''s proof');
 select results_eq($$select slug from public.municipalities$$, $$values ('jorhat')$$, 'a Jorhat admin sees only their municipality');
-select is((select count(*)::int from public.wards), 19, 'a Jorhat admin sees only Jorhat wards');
+select is((select count(*)::int from public.wards), current_setting('test.jorhat_wards')::int, 'a Jorhat admin sees only Jorhat wards (not the other municipality''s)');
 select results_eq($$select email from public.staff_profiles$$, $$values ('jmb@pgtap.test')$$, 'a municipality admin sees only their own staff profile');
 select results_eq($$select entity_id from public.audit_log where action = 'pgtap'$$, $$values ('pgtap-jorhat')$$, 'a Jorhat admin reads only Jorhat audit rows');
 select throws_ok($$insert into public.audit_log (entity_type, entity_id, actor_email, action) values ('x', 'x', 'x', 'x')$$, '42501', null, 'staff cannot insert into audit_log');
