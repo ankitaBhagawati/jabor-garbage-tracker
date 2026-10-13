@@ -1654,7 +1654,7 @@ export default function Jabor() {
         @media(hover:hover) { .rcard:hover { border-color:#10B981; transform:translateY(-1px); box-shadow:0 8px 24px rgba(0,108,73,.10); } }
         .pbar  { height:3px; border-radius:2px; background:#DDE4DD; overflow:hidden; margin-top:8px; }
         .pfill { height:100%; border-radius:2px; background:linear-gradient(90deg,#006C49,#10B981); transition:width .5s; }
-        .pulse-dot { width:7px; height:7px; border-radius:50%; background:#10B981; display:inline-block; animation:pulse 2s infinite; }
+        .pulse-dot { width:7px; height:7px; border-radius:50%; background:#10B981; display:none; animation:pulse 2s infinite; }
         .chip { display:inline-flex; align-items:center; gap:5px; padding:8px 12px; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s; border:2px solid transparent; touch-action:manipulation; }
         .chip:active { transform:scale(.95); }
         .top-appbar { background:#F4FBF4; border-bottom:1px solid #BBCABF; position:sticky; top:0; z-index:50; box-shadow:0 1px 4px rgba(15,23,42,.05); }
