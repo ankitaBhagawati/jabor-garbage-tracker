@@ -27,3 +27,23 @@ test("leaving /admin for a public page brings the logo bar's menu button back", 
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Open menu" })).toBeVisible();
 });
+
+// The Report Garbage page has a way back to the dashboard (public site, reads only).
+for (const [name, viewport] of [["360px", { width: 360, height: 700 }], ["desktop", { width: 1280, height: 800 }]]) {
+  test(`Report Garbage has a back button to the dashboard (${name})`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.getByRole("button", { name: "Report Garbage Now" }).click();
+    await expect(page.getByRole("heading", { name: /Report Garbage/ })).toBeVisible();
+    const back = page.getByRole("button", { name: "Back to dashboard" });
+    await expect(back).toBeVisible();
+    const box = await back.boundingBox();
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await back.click();
+    await expect(page.getByRole("heading", { name: "Track. Report. Clean." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Report Garbage/ })).toHaveCount(0);
+  });
+}

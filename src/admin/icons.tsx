@@ -1,6 +1,6 @@
 import type { IconName } from "./nav.ts";
 
-type Name = IconName | "menu" | "user" | "close" | "chevron" | "signout" | "eye" | "eyeoff" | "copy" | "plus" | "key" | "check";
+type Name = IconName | "menu" | "user" | "close" | "chevron" | "signout" | "eye" | "eyeoff" | "copy" | "plus" | "key" | "check" | "download";
 
 const PATHS: Record<Name, string> = {
   users: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM2.5 20c.5-3.4 3-5.2 6.5-5.2s6 1.8 6.5 5.2M16 4.5a3.2 3.2 0 0 1 0 6.2M18 14.8c1.9.5 3.2 2 3.5 4.7",
@@ -10,6 +10,7 @@ const PATHS: Record<Name, string> = {
   plus: "M12 5v14M5 12h14",
   key: "M14.5 9.5a4 4 0 1 1-1.2 2.8L3.5 12.5V15H6v-2.5h2.5V10l4.8-.5M16.5 8.5h.01",
   check: "m5 12.5 4.5 4.5L19 7.5",
+  download: "M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14",
   dashboard: "M3 11.5 12 4l9 7.5M5.5 10v9.5h13V10M10 19.5v-5h4v5",
   reports: "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01",
   hotspots: "M12 3c1 3.5 4.5 5 4.5 9a4.5 4.5 0 0 1-9 0c0-1.7.8-2.8 1.5-3.8.5 1.3 1.2 1.8 2 1.8 0-2.5-.5-4.5 1-7Z",

@@ -3,6 +3,8 @@ import { adminRequest, saveFile } from "./adminApi.ts";
 import { wardLabel } from "./format.ts";
 import { HOTSPOT_FORMULA, SMALL_SAMPLE, days, hotspotCsv, isSmallSample } from "./reportTables.ts";
 import { hotspotsEnvelope, type Scope } from "./queryBuilders.ts";
+import { FilterPanel, SelectField } from "./Filters.tsx";
+import { Icon } from "./icons.tsx";
 import { EmptyBox, ErrorBox } from "./Pieces.tsx";
 import type { HotspotRow, HotspotWindow } from "./types.ts";
 import { useAsync } from "./useAsync.ts";
@@ -40,17 +42,17 @@ export default function Hotspots({ scope, version }: Props) {
   const anyReports = rows.some(r => r.reports > 0);
 
   return (
+    <>
+      <FilterPanel
+        title="Choose a window"
+        actions={<button type="button" className="btn-s" disabled={result.loading || rows.length === 0} onClick={() => saveFile(hotspotCsv(rows), `jabor-ward-hotspots-${span}-days.csv`)}><Icon name="download" size={18} /> Export CSV</button>}
+      >
+        <SelectField label="Reports from the last" value={String(span)} placeholder="30 days" clearable={false}
+          options={WINDOWS.map(w => ({ value: String(w), label: `${w} days` }))} onChange={value => setSpan(Number(value) as HotspotWindow)} />
+      </FilterPanel>
+
     <section aria-label="Ward hotspots" className="adm-panel">
       <p className="adm-muted adm-intro">Which wards need attention first. Staff only: this is never shown to the public, and it shows wards, not places on a map.</p>
-      <div className="adm-filters">
-        <div className="adm-field">
-          <label htmlFor="h-window">Reports from the last</label>
-          <select id="h-window" className="inp" value={span} onChange={e => setSpan(Number(e.target.value) as HotspotWindow)}>
-            {WINDOWS.map(w => <option key={w} value={w}>{w} days</option>)}
-          </select>
-        </div>
-        <button type="button" className="btn-s" disabled={result.loading || rows.length === 0} onClick={() => saveFile(hotspotCsv(rows), `jabor-ward-hotspots-${span}-days.csv`)}>Export CSV</button>
-      </div>
 
       {result.error ? (
         <ErrorBox message={result.error} onRetry={result.reload} />
@@ -109,5 +111,6 @@ export default function Hotspots({ scope, version }: Props) {
         </>
       )}
     </section>
+    </>
   );
 }

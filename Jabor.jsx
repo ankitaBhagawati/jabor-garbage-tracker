@@ -1662,6 +1662,8 @@ export default function Jabor() {
         .icon-action { width:40px; height:40px; border:0; border-radius:999px; background:transparent; color:#006C49; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; transition:background .2s, transform .2s; }
         .icon-action:hover { background:#E8F0E9; }
         .icon-action:active { transform:scale(.95); }
+        .back-link { display:inline-flex; align-items:center; gap:6px; min-height:44px; margin:0 0 4px -4px; padding:0 8px 0 4px; border:0; border-radius:8px; background:transparent; color:#006C49; font:inherit; font-size:14px; font-weight:700; cursor:pointer; }
+        .back-link:hover { background:#E8F0E9; }
         .brand-lockup { display:flex; align-items:center; gap:9px; border:0; background:transparent; cursor:pointer; text-align:left; color:#006C49; }
         .brand-lockup img { width:34px; height:34px; object-fit:contain; }
         .brand-lockup strong { display:block; font-family:'Sora',sans-serif; font-size:22px; line-height:1; letter-spacing:-.035em; text-transform:none; color:#0F172A; }
@@ -2031,6 +2033,10 @@ export default function Jabor() {
         {view === "report" && !submitted && (
           <div className={"slide-in" + (form.anonymous ? " incognito" : "")} style={{ maxWidth: 600, margin: "0 auto" }}>
             <div style={{ marginBottom: 14, color: form.anonymous ? "#E8F0E9" : undefined }}>
+              <button type="button" className="back-link" style={{ color: form.anonymous ? "#8CA394" : undefined }} onClick={() => { setAppView("dashboard"); setTimeout(() => window.scrollTo({ top: 0, behavior: "auto" }), 0); }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6" /></svg>
+                Back to dashboard
+              </button>
               <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.03em", marginBottom: 4 }}>📸 Report Garbage</h1>
               <p style={{ color: form.anonymous ? "#8CA394" : "#3C4A42", fontSize: 13 }}>30 seconds · Helps track garbage reports across Assam.</p>
             </div>

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { adminRequest, saveFile } from "./adminApi.ts";
 import { days, isMonth, monthLabel, monthValue, monthlyCsv, monthlyName } from "./reportTables.ts";
 import { monthlyEnvelope, type Scope } from "./queryBuilders.ts";
+import { DateField, FilterPanel } from "./Filters.tsx";
+import { Icon } from "./icons.tsx";
 import { EmptyBox, ErrorBox } from "./Pieces.tsx";
 import type { MonthlyRow } from "./types.ts";
 import { useAsync } from "./useAsync.ts";
@@ -33,19 +35,25 @@ export default function MonthlyReport({ scope, municipalityName, overdueDays, ve
   const generated = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
 
   return (
+    <>
+      <FilterPanel
+        className="adm-noprint"
+        title="Choose a month"
+        actions={(
+          <div className="adm-headactions">
+            <button type="button" className="btn-s" disabled={!valid || report.loading || rows.length === 0} onClick={() => saveFile(monthlyCsv(rows), `jabor-monthly-ward-report-${month}.csv`)}><Icon name="download" size={18} /> Export CSV</button>
+            <button type="button" className="btn-s" disabled={!valid || report.loading || rows.length === 0} onClick={() => window.print()}>Print or save as PDF</button>
+          </div>
+        )}
+      >
+        <DateField type="month" label="Month" value={month} min="2024-01" max={current} clearable={false} onChange={setMonth} />
+      </FilterPanel>
+
     <section aria-label="Monthly ward report" className="adm-panel adm-report">
       <div className="adm-print-title">
         <p className="adm-eyebrow">JABOR · {municipalityName.toUpperCase()}</p>
         <h2>Monthly ward report{label ? `: ${label}` : ""}</h2>
         <p className="adm-muted">Prepared {generated}</p>
-      </div>
-      <div className="adm-filters adm-noprint">
-        <div className="adm-field">
-          <label htmlFor="m-month">Month</label>
-          <input id="m-month" className="inp" type="month" value={month} max={current} min="2024-01" onChange={e => setMonth(e.target.value)} />
-        </div>
-        <button type="button" className="btn-s" disabled={!valid || report.loading || rows.length === 0} onClick={() => saveFile(monthlyCsv(rows), `jabor-monthly-ward-report-${month}.csv`)}>Export CSV</button>
-        <button type="button" className="btn-s" disabled={!valid || report.loading || rows.length === 0} onClick={() => window.print()}>Print or save as PDF</button>
       </div>
 
       {!valid ? (
@@ -89,5 +97,6 @@ export default function MonthlyReport({ scope, municipalityName, overdueDays, ve
         </>
       )}
     </section>
+    </>
   );
 }
