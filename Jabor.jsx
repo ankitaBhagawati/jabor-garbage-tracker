@@ -31,6 +31,7 @@ import {
 import { uploadImageToCloudinary, validateUploadImage } from "./src/services/cloudinaryService.js";
 import { executeActions, generateRecommendations } from "./src/services/agentService.js";
 import {
+  gaEnabled,
   initGA,
   trackCleanupProofSubmission,
   trackPageView,
@@ -1193,8 +1194,8 @@ export default function Jabor() {
     const originalPushState = window.history.pushState;
     const originalReplaceState = window.history.replaceState;
 
-    // Staging traffic must not mix into production analytics.
-    if (import.meta.env.APP_ENV !== "staging") initGA(GA_MEASUREMENT_ID);
+    // Production deployments only: never localhost, Preview or staging.
+    if (gaEnabled(import.meta.env)) initGA(GA_MEASUREMENT_ID);
     sendPageView();
 
     window.history.pushState = function pushState(...args) {

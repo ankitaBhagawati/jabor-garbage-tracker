@@ -115,7 +115,7 @@ Code: `api/_lib/access.js`. Tests: `api/_lib/access.check.js`.
 | 4 | Login and session ignored `staff_profiles` | Fixed: both resolve the staff member per request |
 | 5 | `jabor-execute` has real-world side effects | Unchanged by design: super admin only; do not run on staging until contacts are replaced |
 | 6 | `jabor-notify` cannot take a user role check | Kept on the shared secret, now constant time, with tests for user JWTs |
-| 7 | `api/reports/submit.js` skips Turnstile when the secret is unset (fails open) | Open: separate small PR |
+| 7 | `api/reports/submit.js` skips Turnstile when the secret is unset (fails open) | Fixed: refused with 503 in production (`VERCEL_ENV`); still skipped in Preview and local |
 | 8 | `/api/cloudinary-signature` has no Turnstile | Open |
 | 9 | Whether the edge functions are deployed with JWT verification on | Cannot be seen from the repo; check the Supabase dashboard |
 

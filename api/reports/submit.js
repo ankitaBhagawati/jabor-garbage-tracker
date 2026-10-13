@@ -3,7 +3,7 @@ import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { captureError } from "../_lib/sentry.js";
 import { resolvePlacement } from "../_lib/placement.js";
-import { HttpError, serviceRest } from "../_lib/server.js";
+import { HttpError, isProduction, serviceRest } from "../_lib/server.js";
 
 // Server-side chokepoint for public report submissions. The frontend no longer
 // inserts into Supabase directly; every report passes through rate limiting,
@@ -50,8 +50,9 @@ function getClientIp(req) {
 async function verifyTurnstile(token, ip) {
   const secret = env("TURNSTILE_SECRET_KEY");
   if (!secret) {
-    // Not configured yet - allow through so submissions keep working until the
-    // Turnstile keys are added, but make the gap loud in the logs.
+    // Production fails closed: no secret, no submissions.
+    if (isProduction()) return { ok: false, reason: "missing-secret" };
+    // Preview and local development: allow through, but make the gap loud in the logs.
     console.warn("[jabor] TURNSTILE_SECRET_KEY is not set - skipping bot verification");
     return { ok: true };
   }
@@ -60,12 +61,19 @@ async function verifyTurnstile(token, ip) {
   }
   const body = new URLSearchParams({ secret, response: token });
   if (ip && ip !== "unknown") body.set("remoteip", ip);
-  const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
-  const data = await res.json().catch(() => null);
+  let data = null;
+  try {
+    const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+    data = await res.json().catch(() => null);
+  } catch (error) {
+    // Cloudflare unreachable: reject, never let the report through unverified.
+    console.error("[jabor] Turnstile verification call failed:", error?.message || error);
+    return { ok: false, reason: "verify-unavailable" };
+  }
   if (!data?.success) {
     // hostname is the site the token was issued for; a mismatch points at the wrong widget.
     const codes = (data?.["error-codes"] || []).join(",") || "verification-failed";
@@ -249,6 +257,10 @@ async function handler(req, res) {
   if (!turnstile.ok) {
     // The reason (Cloudflare's error codes) stays in the server log and is never sent to the client.
     console.log(`[jabor] turnstile rejected report submission (ip=${ip}, reason=${turnstile.reason})`);
+    if (turnstile.reason === "missing-secret" || turnstile.reason === "verify-unavailable") {
+      if (turnstile.reason === "missing-secret") console.error("[jabor] TURNSTILE_SECRET_KEY is not set in production: report submissions are refused");
+      return res.status(503).json({ error: "The security check is unavailable right now. Please try again later." });
+    }
     if (turnstile.reason === "missing-token") {
       console.warn("[jabor] the browser sent no Turnstile token: the client bundle was most likely built without VITE_TURNSTILE_SITE_KEY");
       return res.status(400).json({ error: "The security check did not run. Please refresh the page and try again." });

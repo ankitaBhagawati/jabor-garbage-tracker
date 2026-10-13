@@ -101,6 +101,15 @@ export async function strictRateLimit(actorId, name, max, windowSec) {
   if (count > max) throw new HttpError(429, "Too many requests. Please try again later.");
 }
 
+// True unless this is positively a Preview or development run. VERCEL_ENV is set by Vercel itself. A deployed
+// function that somehow has no VERCEL_ENV still counts as production (Vercel runs every function with
+// NODE_ENV=production), so the checks that ask this fail closed. Off Vercel (vite dev, tests) it is false.
+export function isProduction() {
+  const vercelEnv = process.env.VERCEL_ENV;
+  if (vercelEnv) return vercelEnv !== "preview" && vercelEnv !== "development";
+  return process.env.NODE_ENV === "production";
+}
+
 // ── Cloudflare Turnstile ─────────────────────────────────────────────────────
 export async function verifyTurnstile(req, token) {
   const secret = process.env.TURNSTILE_SECRET_KEY;
