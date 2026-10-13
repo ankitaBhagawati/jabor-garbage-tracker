@@ -7,11 +7,13 @@ import { ageDays, ageLabel, isOverdue, statusOf, wardLabel } from "./format.ts";
 import { PAGE_SIZE, exportEnvelope, reportsPageEnvelope, tileEnvelope, type Scope, type TileKey } from "./queryBuilders.ts";
 import { CheckField, DateField, FilterPanel, SelectField, TextField } from "./Filters.tsx";
 import { EmptyBox, ErrorBox, OverdueBadge, Pager, StatusBadge } from "./Pieces.tsx";
+import { districtsEnvelope } from "./queryBuilders.ts";
 import { EMPTY_FILTERS, type Filters, type ReportRow, type ReportTab, type Sort, type SortKey, type StatusFilter, type Ward } from "./types.ts";
 import { useAsync } from "./useAsync.ts";
 
 type TableProps = {
   scope: Scope;
+  viewAll: boolean; // a super admin looking at every municipality
   wards: Ward[];
   overdueDays: number;
   version: number;
@@ -36,7 +38,7 @@ const SORT_OPTIONS: { value: string; label: string; sort: Sort }[] = [
 
 const SORT_LABEL: Record<SortKey, string> = { created_at: "Age", updated_at: "Updated", status: "Status", area: "Report" };
 
-function ReportsTable({ scope, wards, overdueDays, version, tab, initial, onOpenReport, onPhotoClick }: TableProps) {
+function ReportsTable({ scope, viewAll, wards, overdueDays, version, tab, initial, onOpenReport, onPhotoClick }: TableProps) {
   const [filters, setFilters] = useState<Filters>({ ...EMPTY_FILTERS, status: initial.status, overdueOnly: initial.overdue });
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<Sort>({ key: "created_at", dir: "desc" });
@@ -54,6 +56,9 @@ function ReportsTable({ scope, wards, overdueDays, version, tab, initial, onOpen
   const overdueApplies = tab === "all" || tab === "active" || tab === "unassigned";
   const applied = useMemo<Filters>(() => (overdueApplies ? filters : { ...filters, overdueOnly: false }), [filters, overdueApplies]);
 
+  // View all: no ward filter or column; a District filter instead.
+  const districts = useAsync(async () => (viewAll ? (await adminRequest<{ district: string }[]>(districtsEnvelope(scope))).data : []), [viewAll, version]);
+  const districtOptions = useMemo(() => [...new Set((districts.data ?? []).map(r => r.district.trim()).filter(Boolean))].sort().map(d => ({ value: d, label: d })), [districts.data]);
   const wardById = useMemo(() => new Map(wards.map(w => [w.id, w])), [wards]);
   const list = useAsync(
     () => adminRequest<ReportRow[]>(reportsPageEnvelope(scope, applied, sort, page, new Date(), overdueDays, tab)),
@@ -94,7 +99,8 @@ function ReportsTable({ scope, wards, overdueDays, version, tab, initial, onOpen
         <SelectField label="Sort" value={sortValue} options={SORT_OPTIONS.map(o => ({ value: o.value, label: o.label }))} placeholder="By column" clearable={false}
           onChange={value => { const found = SORT_OPTIONS.find(o => o.value === value); if (found) setSort(found.sort); }} />
         {tab === "all" && <SelectField label="Status" value={filters.status} placeholder="All statuses" options={STATUS_OPTIONS} onChange={value => set({ status: value as StatusFilter, overdueOnly: false })} />}
-        {tab !== "unassigned" && <SelectField label="Ward" value={filters.ward} placeholder="All wards" options={[{ value: "unassigned", label: "Unassigned" }, ...wards.map(w => ({ value: w.id, label: wardLabel(w) }))]} onChange={value => set({ ward: value })} />}
+        {viewAll && <SelectField label="District" value={filters.district} placeholder="All districts" options={districtOptions} onChange={value => set({ district: value })} />}
+        {!viewAll && tab !== "unassigned" && <SelectField label="Ward" value={filters.ward} placeholder="All wards" options={[{ value: "unassigned", label: "Unassigned" }, ...wards.map(w => ({ value: w.id, label: wardLabel(w) }))]} onChange={value => set({ ward: value })} />}
         <DateField label="From" value={filters.from} max={filters.to || undefined} onChange={value => set({ from: value })} />
         <DateField label="To" value={filters.to} min={filters.from || undefined} onChange={value => set({ to: value })} />
         {overdueApplies && <CheckField label="Overdue only" checked={filters.overdueOnly} onChange={checked => set({ overdueOnly: checked, status: checked ? "" : filters.status })} />}
@@ -126,7 +132,7 @@ function ReportsTable({ scope, wards, overdueDays, version, tab, initial, onOpen
                       </button>
                     </th>
                   ))}
-                  <th scope="col">Ward</th>
+                  <th scope="col">{viewAll ? "District" : "Ward"}</th>
                 </tr>
               </thead>
               <tbody>
@@ -149,7 +155,7 @@ function ReportsTable({ scope, wards, overdueDays, version, tab, initial, onOpen
                       </td>
                       <td data-label=""><StatusBadge status={status} hidden={Boolean(row.is_deleted)} /></td>
                       <td data-label="Age">{ageLabel(ageDays(row.created_at, now))} {overdue && <OverdueBadge />}</td>
-                      <td data-label="Ward">{ward ? wardLabel(ward) : <span className="adm-muted">Unassigned</span>}</td>
+                      <td data-label={viewAll ? "District" : "Ward"}>{viewAll ? (row.district || <span className="adm-muted">Not given</span>) : ward ? wardLabel(ward) : <span className="adm-muted">Unassigned</span>}</td>
                     </tr>
                   );
                 })}
@@ -178,21 +184,23 @@ function TabCount({ tab, scope, overdueDays, version }: { tab: ReportTab; scope:
 
 // The Reports page: segmented tabs over the table. The Hidden tab is the list of hidden and invalid reports with Restore.
 export default function Reports({ onTab, onChanged, onPhotoClick, ...table }: PageProps) {
-  const tab = table.tab;
+  // View all has no "Unassigned wards" tab: wards belong to one municipality.
+  const tabs = !table.viewAll ? REPORT_TABS : REPORT_TABS.filter(t => t.id !== "unassigned");
+  const tab = tabs.some(t => t.id === table.tab) ? table.tab : "all";
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
-    const index = REPORT_TABS.findIndex(t => t.id === tab);
-    const move = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : e.key === "Home" ? -index : e.key === "End" ? REPORT_TABS.length - 1 - index : 0;
+    const index = tabs.findIndex(t => t.id === tab);
+    const move = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : e.key === "Home" ? -index : e.key === "End" ? tabs.length - 1 - index : 0;
     if (!move) return;
     e.preventDefault();
-    const next = REPORT_TABS[(index + move + REPORT_TABS.length) % REPORT_TABS.length].id;
+    const next = tabs[(index + move + tabs.length) % tabs.length].id;
     onTab(next);
     refs.current[next]?.focus();
   };
   return (
     <div>
       <div className="adm-tabrow" role="tablist" aria-label="Report groups">
-        {REPORT_TABS.map(t => (
+        {tabs.map(t => (
           <button
             key={t.id}
             ref={node => { refs.current[t.id] = node; }}
@@ -214,7 +222,7 @@ export default function Reports({ onTab, onChanged, onPhotoClick, ...table }: Pa
             <HiddenReports municipalityId={table.scope.municipalityId} version={table.version} onChanged={onChanged} onPhotoClick={onPhotoClick} />
           </div>
         ) : (
-          <ReportsTable {...table} onPhotoClick={onPhotoClick} />
+          <ReportsTable {...table} tab={tab} onPhotoClick={onPhotoClick} />
         )}
       </div>
     </div>

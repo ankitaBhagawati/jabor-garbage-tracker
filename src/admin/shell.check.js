@@ -152,3 +152,14 @@ assert.match(F.buildUnhidePatch({ status: "verified" }, "x".repeat(1001)).error,
 for (const staff of [SUPER, MUNI]) for (const body of [F.buildUnhidePatch({ status: "verified" }, "ok").body, F.buildUnhidePatch({ status: "invalid" }, "").body]) authorize(staff, { path: `/rest/v1/reports?id=eq.${ID}`, method: "PATCH", body });
 
 console.log(`admin shell ok (${checked} requests checked for both roles)`);
+
+// ── View all: the District filter and the list of districts are allowed, and add no ward condition ──
+{
+  const filters = { ...EMPTY_FILTERS, district: `Jor"hat` };
+  const plan = authorize(SUPER, Q.reportsPageEnvelope({ municipalityId: null }, filters, { key: "created_at", dir: "desc" }, 1, NOW, 7, "all"));
+  assert.ok(plan.path.includes(encodeURIComponent('district.eq."Jorhat"')), "the district is quoted, and a quote in it is dropped");
+  assert.ok(!decodeURIComponent(plan.path).includes("ward_id.eq"), "no ward condition in View all");
+  for (const staff of [SUPER, MUNI]) authorize(staff, Q.districtsEnvelope({ municipalityId: null }));
+  authorize(SUPER, Q.districtsEnvelope({ municipalityId: M1 }));
+  console.log("view all filters ok");
+}

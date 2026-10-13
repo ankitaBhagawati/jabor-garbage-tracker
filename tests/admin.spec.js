@@ -1038,12 +1038,31 @@ test.describe("owner", () => {
     await page.keyboard.press("Escape");
     // the table, tabs and Hidden list work for the owner too
     await page.getByRole("link", { name: "Reports", exact: true }).click();
-    await expect(page.getByRole("tab")).toHaveText([/^All reports \d+$/, /^Unassigned wards \d+$/, /^Active \d+$/, /^In progress \d+$/, /^Cleaned \d+$/, /^Hidden \d+$/]);
+    await expect(page.getByRole("tab")).toHaveText([/^All reports \d+$/, /^Active \d+$/, /^In progress \d+$/, /^Cleaned \d+$/, /^Hidden \d+$/]);
     await expect(page.locator(".adm-pager span").first()).toContainText("of");
     await page.getByRole("tab", { name: "Hidden" }).click();
     await expect(page.getByRole("heading", { name: /^Hidden \(\d+\)$/ })).toBeVisible();
     await page.getByRole("link", { name: "Cleanup Verification" }).click();
     await expect(page.getByRole("heading", { name: /Cleanup Proofs/ })).toBeVisible();
+  });
+
+  test("[super] View all has a District filter and no ward tab, filter or column", async ({ page }) => {
+    await page.goto("/admin#/reports");
+    await expect(page.getByRole("tab", { name: /Unassigned wards/ })).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Ward" })).toHaveCount(0);
+    await expect(page.getByRole("columnheader", { name: "District" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Ward" })).toHaveCount(0);
+    const district = page.getByRole("combobox", { name: "District" });
+    await district.click();
+    await page.getByRole("listbox").getByRole("option").first().click();
+    await expect(page.getByRole("button", { name: "Clear filters" }).first()).toBeVisible();
+    await page.getByRole("link", { name: "Dashboard" }).click();
+    await expect(page.locator(".adm-tile", { hasText: "Unassigned wards" })).toHaveCount(0);
+    await page.getByLabel("Municipality").first().selectOption({ label: "Jorhat Municipal Board" });
+    await expect(page.locator(".adm-tile", { hasText: "Unassigned wards" })).toHaveCount(1);
+    await page.getByRole("link", { name: "Reports", exact: true }).click();
+    await expect(page.getByRole("tab", { name: /Unassigned wards/ })).toHaveCount(1);
+    await expect(page.getByRole("combobox", { name: "District" })).toHaveCount(0);
   });
 
   test("[super] View all has Add admins; one municipality does not, and Hotspots needs one", async ({ page }) => {

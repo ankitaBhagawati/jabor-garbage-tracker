@@ -5,6 +5,7 @@ import { useAsync } from "./useAsync.ts";
 
 type Props = {
   scope: Scope;
+  viewAll: boolean; // a super admin looking at every municipality: no ward figures
   overdueDays: number;
   version: number;
   onNavigate: (route: Route) => void;
@@ -46,12 +47,14 @@ function Tile({ tile, scope, overdueDays, version, onOpen }: { tile: TileKey; sc
   );
 }
 
-export default function Dashboard({ scope, overdueDays, version, onNavigate }: Props) {
+export default function Dashboard({ scope, viewAll, overdueDays, version, onNavigate }: Props) {
+  // View all (no municipality) has no ward figures: wards belong to one municipality.
+  const tiles = !viewAll ? TILE_KEYS : TILE_KEYS.filter(tile => tile !== "unassigned");
   return (
     <div>
       <p className="adm-muted adm-intro">Select a number to see those reports.</p>
       <section aria-label="Summary" className="adm-tiles">
-        {TILE_KEYS.map(tile => (
+        {tiles.map(tile => (
           <Tile key={tile} tile={tile} scope={scope} overdueDays={overdueDays} version={version} onOpen={() => onNavigate(TILE_ROUTE[tile])} />
         ))}
       </section>

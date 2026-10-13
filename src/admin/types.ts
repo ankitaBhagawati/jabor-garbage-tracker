@@ -53,12 +53,13 @@ export type AuditRow = {
 export type Filters = {
   status: StatusFilter;
   ward: string; // "" for all, "unassigned", or a ward id
+  district: string; // "" for all; only used in View all
   from: string; // yyyy-mm-dd, local
   to: string;
   overdueOnly: boolean;
   q: string;
 };
-export const EMPTY_FILTERS: Filters = { status: "", ward: "", from: "", to: "", overdueOnly: false, q: "" };
+export const EMPTY_FILTERS: Filters = { status: "", ward: "", district: "", from: "", to: "", overdueOnly: false, q: "" };
 
 export type SortKey = "created_at" | "updated_at" | "status" | "area";
 export type Sort = { key: SortKey; dir: "asc" | "desc" };

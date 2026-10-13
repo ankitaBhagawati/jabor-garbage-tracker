@@ -120,10 +120,10 @@ export default function AdminApp({ session, onSignOut, extraTabs = [], onChanged
   else if (!isSuper && !municipality && municipalities.loading) body = <div className="adm-state" aria-busy="true"><p>Loading…</p></div>;
   else if (!isSuper && !municipality) body = <div className="adm-state"><p>No municipality is set up for this account.</p></div>;
   else if (wards.error) body = <ErrorBox message={wards.error} onRetry={wards.reload} />;
-  else if (route.page === "dashboard") body = <Dashboard key={areaKey} scope={scope} overdueDays={overdueDays} version={version} onNavigate={go} />;
+  else if (route.page === "dashboard") body = <Dashboard key={areaKey} scope={scope} viewAll={viewAll} overdueDays={overdueDays} version={version} onNavigate={go} />;
   else if (route.page === "reports") body = (
     <Reports
-      key={`${areaKey}-${reportsSeq}`} scope={scope} wards={wardList} overdueDays={overdueDays} version={version}
+      key={`${areaKey}-${reportsSeq}`} scope={scope} viewAll={viewAll} wards={wardList} overdueDays={overdueDays} version={version}
       tab={route.tab} initial={{ status: route.status, overdue: route.overdue }} 
       onTab={chooseTab} onOpenReport={setOpenReport} onChanged={changed} onPhotoClick={setPhoto}
     />
