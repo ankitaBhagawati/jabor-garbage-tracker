@@ -85,9 +85,9 @@ Code: `api/_lib/access.js`. Tests: `api/_lib/access.check.js`.
 | Route | Method | Tables touched | Key | Who may call it |
 |---|---|---|---|---|
 | `/api/reports/submit` | POST | `reports` (insert), `municipalities`, `wards`, `mla_list`, `mp_list`; calls `jabor-notify` | service role; anon for the notify call | Anyone. Upstash limit, Turnstile, validation. |
-| `/api/cleanup-proofs` | POST | `reports` (read), `cleanup_proofs` (insert) | service role | Anyone. Limit, Turnstile (required). |
+| `/api/cleanup-proofs` | POST | `reports` (read), `cleanup_proofs` (insert) | service role | Anyone. Limit, and the proof ticket issued by `/api/cloudinary-signature` after Turnstile (required). |
 | `/api/municipalities` | GET | `municipalities`, `wards`, `ward_localities` (read) | service role | Anyone. Reference data for the report form only. |
-| `/api/cloudinary-signature` | POST | none | Cloudinary secret | Anyone. Rate limited. |
+| `/api/cloudinary-signature` | POST | none | Cloudinary secret | Anyone. 20 per address per 10 minutes, folder allowlist. The `cleanup-proofs` folder also needs Turnstile. |
 | `/api/health` | GET | `mla_list` (read) | anon | Anyone. |
 | `/api/admin/login` | POST | Supabase Auth, `staff_profiles` (own row) | anon, then the user's token | Anyone with credentials, rate limited. Accepts only active staff. |
 | `/api/admin/session` | GET | Supabase Auth, `staff_profiles` (own row) | user JWT | Active staff. Returns email, role, municipality. |
@@ -116,7 +116,7 @@ Code: `api/_lib/access.js`. Tests: `api/_lib/access.check.js`.
 | 5 | `jabor-execute` has real-world side effects | Unchanged by design: super admin only; do not run on staging until contacts are replaced |
 | 6 | `jabor-notify` cannot take a user role check | Kept on the shared secret, now constant time, with tests for user JWTs |
 | 7 | `api/reports/submit.js` skips Turnstile when the secret is unset (fails open) | Fixed: refused with 503 in production (`VERCEL_ENV`); still skipped in Preview and local |
-| 8 | `/api/cloudinary-signature` has no Turnstile | Open |
+| 8 | `/api/cloudinary-signature` has no Turnstile | Partly fixed: required for `cleanup-proofs`; `reports` stays anonymous (docs/SECURITY-NOTES.md) |
 | 9 | Whether the edge functions are deployed with JWT verification on | Cannot be seen from the repo; check the Supabase dashboard |
 
 ## 7. T5: the admin dashboard needed no allowlist additions

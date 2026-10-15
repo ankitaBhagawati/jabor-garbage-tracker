@@ -68,11 +68,11 @@ export async function prepareImageForUpload(file) {
   }
 }
 
-async function getUploadSignature(folder) {
+async function getUploadSignature(folder, turnstileToken) {
   const res = await fetch("/api/cloudinary-signature", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ folder }),
+    body: JSON.stringify({ folder, turnstileToken }),
   });
   const text = await res.text();
   let data = null;
@@ -88,10 +88,12 @@ async function getUploadSignature(folder) {
   return data;
 }
 
-export async function uploadImageToCloudinary(file, folder) {
+// Returns the stored image URL and, for a cleanup proof (which needs a Turnstile token to be signed), the
+// proofTicket that /api/cleanup-proofs accepts in place of the spent token.
+export async function uploadImageToCloudinary(file, folder, turnstileToken) {
   assertCloudinaryConfig();
   const preparedFile = await prepareImageForUpload(file);
-  const signatureData = await getUploadSignature(folder);
+  const signatureData = await getUploadSignature(folder, turnstileToken);
   const formData = new FormData();
   formData.append("file", preparedFile);
   formData.append("api_key", signatureData.apiKey);
@@ -109,5 +111,5 @@ export async function uploadImageToCloudinary(file, folder) {
   if (!res.ok || !data.secure_url) {
     throw new Error(data?.error?.message || "Cloudinary image upload failed.");
   }
-  return data.secure_url;
+  return { url: data.secure_url, proofTicket: signatureData.proofTicket };
 }

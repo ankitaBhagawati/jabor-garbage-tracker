@@ -18,14 +18,14 @@ export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimat
   }
 
   // Supabase stores only this Cloudinary secure URL; no image bytes go to Supabase Storage.
-  const imageUrl = await uploadImageToCloudinary(imageFile, "cleanup-proofs");
+  const { url: imageUrl, proofTicket } = await uploadImageToCloudinary(imageFile, "cleanup-proofs", turnstileToken);
   return apiJson("/api/cleanup-proofs", {
     body: {
       report_id: reportId,
       image_url: imageUrl,
       cleaned_date_estimate: cleanedDateEstimate,
       submitted_by: submittedBy || null,
-      turnstileToken,
+      proofTicket,
     },
   });
 }

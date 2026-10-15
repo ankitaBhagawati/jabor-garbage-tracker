@@ -6,7 +6,6 @@ process.env.SUPABASE_URL = "http://supabase.test";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-for-tests";
 const { isProduction } = await import("./server.js");
 const { default: submit } = await import("../reports/submit.js");
-const { default: cleanupProofs } = await import("../cleanup-proofs.js");
 
 function mockRes() {
   const res = { headers: {}, statusCode: 200, body: null };
@@ -26,13 +25,13 @@ globalThis.fetch = async url => {
 };
 const cloudflare = body => () => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
 
-async function post(handler, { vercelEnv, nodeEnv, secret, token = "token" }) {
+async function post(handler, { vercelEnv, nodeEnv, secret, token = "token", folder }) {
   for (const [name, value] of [["VERCEL_ENV", vercelEnv], ["NODE_ENV", nodeEnv], ["TURNSTILE_SECRET_KEY", secret]]) {
     if (value === undefined) delete process.env[name]; else process.env[name] = value;
   }
   verifyCalls = 0;
   const res = mockRes();
-  await handler({ method: "POST", headers: { host: "jabor.in", origin: "https://jabor.in", "x-forwarded-for": `10.0.0.${++requests}` }, socket: {}, body: { turnstileToken: token } }, res);
+  await handler({ method: "POST", headers: { host: "jabor.in", origin: "https://jabor.in", "x-forwarded-for": `10.0.0.${++requests}` }, socket: {}, body: { turnstileToken: token, folder } }, res);
   return res;
 }
 const quiet = { log: console.log, warn: console.warn, error: console.error };
@@ -87,17 +86,25 @@ assert.equal(verifyCalls, 1);
 assert.equal(res.statusCode, 400);
 assert.ok(!SECURITY.test(res.body.error), "a valid token is not refused by the bot check");
 
-// Cleanup proofs (shared verifyTurnstile) never skip the check, in any environment.
+// Cleanup proofs: Turnstile is checked when the upload is signed (shared verifyTurnstile) and never skipped,
+// in any environment. /api/cleanup-proofs itself takes the ticket from that step (see hardening.check.js).
+process.env.CLOUDINARY_API_KEY = "k";
+process.env.CLOUDINARY_API_SECRET = "s";
+const { default: sign } = await import("../cloudinary-signature.js");
 for (const vercelEnv of ["production", "preview", undefined]) {
   siteverify = cloudflare({ success: true });
-  res = await post(cleanupProofs, { vercelEnv });
-  assert.equal(res.statusCode, 500, `cleanup proof, missing secret (${vercelEnv}): refused`);
+  res = await post(sign, { vercelEnv, folder: "cleanup-proofs" });
+  assert.equal(res.statusCode, 503, `cleanup proof signature, missing secret (${vercelEnv}): refused`);
   siteverify = () => { throw new TypeError("fetch failed"); };
-  res = await post(cleanupProofs, { vercelEnv, secret: "s" });
-  assert.equal(res.statusCode, 500, `cleanup proof, Cloudflare down (${vercelEnv}): refused`);
+  res = await post(sign, { vercelEnv, secret: "s", folder: "cleanup-proofs" });
+  assert.equal(res.statusCode, 503, `cleanup proof signature, Cloudflare down (${vercelEnv}): refused`);
   siteverify = cloudflare({ success: false });
-  res = await post(cleanupProofs, { vercelEnv, secret: "s" });
-  assert.equal(res.statusCode, 400, `cleanup proof, invalid token (${vercelEnv}): refused`);
+  res = await post(sign, { vercelEnv, secret: "s", folder: "cleanup-proofs" });
+  assert.equal(res.statusCode, 400, `cleanup proof signature, invalid token (${vercelEnv}): refused`);
+  siteverify = cloudflare({ success: true });
+  res = await post(sign, { vercelEnv, secret: "s", folder: "cleanup-proofs" });
+  assert.equal(res.statusCode, 200, `cleanup proof signature, valid token (${vercelEnv}): signed`);
+  assert.match(res.body.proofTicket, /^\d+\.[\w-]+$/);
 }
 
 Object.assign(console, quiet);
