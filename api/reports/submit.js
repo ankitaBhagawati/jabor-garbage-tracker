@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { resolvePlacement } from "../_lib/placement.js";
-import { configError, isProduction, route, serviceRest } from "../_lib/server.js";
+import { configError, isProduction, route, serviceRest, stepTimer } from "../_lib/server.js";
 
 // Server-side chokepoint for public report submissions. The frontend no longer
 // inserts into Supabase directly; every report passes through rate limiting,
@@ -213,6 +213,7 @@ async function insertReport(report) {
 // JSON 500 reported to Sentry.
 export default route("POST", async (req, res) => {
   const ip = getClientIp(req);
+  const step = stepTimer(res);
 
   // A misconfigured rate limiter must degrade to "no rate limit", never to
   // a crashed function that blocks every submission.
@@ -224,7 +225,7 @@ export default route("POST", async (req, res) => {
   }
   if (limiter) {
     try {
-      const { success, remaining } = await limiter.limit(ip);
+      const { success, remaining } = await step("ratelimit", () => limiter.limit(ip));
       if (!success) {
         console.log(`[jabor] rate limit exceeded for report submission (ip=${ip}, remaining=${remaining})`);
         return res.status(429).json({
@@ -239,7 +240,7 @@ export default route("POST", async (req, res) => {
     console.warn("[jabor] UPSTASH_REDIS_REST_URL/TOKEN not set - report rate limiting is disabled");
   }
 
-  const turnstile = await verifyTurnstile(req.body?.turnstileToken, ip);
+  const turnstile = await step("turnstile", () => verifyTurnstile(req.body?.turnstileToken, ip));
   if (!turnstile.ok) {
     // The reason (Cloudflare's error codes) stays in the server log and is never sent to the client.
     console.log(`[jabor] turnstile rejected report submission (ip=${ip}, reason=${turnstile.reason})`);
@@ -261,28 +262,28 @@ export default route("POST", async (req, res) => {
 
   // Municipality and ward are decided here from the chosen district and constituency and the
   // answer to the municipal-area question. A municipality_id in the request is never read.
-  const municipalities = await serviceRest("/rest/v1/municipalities?is_active=eq.true&select=id,name,settings");
-  Object.assign(validated.report, await resolvePlacement(req.body || {}, {
+  const municipalities = await step("municipalities", () => serviceRest("/rest/v1/municipalities?is_active=eq.true&select=id,name,settings"));
+  Object.assign(validated.report, await step("placement", () => resolvePlacement(req.body || {}, {
     municipalities,
     wardBelongs: async (wardId, municipalityId) => {
       const rows = await serviceRest(`/rest/v1/wards?id=eq.${wardId}&municipality_id=eq.${municipalityId}&select=id&limit=1`);
       return rows.length > 0;
     },
-  }));
+  })));
   validated.report.source = "public";
 
-  const reps = await lookupRepresentatives(validated.report.constituency);
+  const reps = await step("representatives", () => lookupRepresentatives(validated.report.constituency));
   if (!reps) return res.status(400).json({ error: "Unknown constituency." });
   Object.assign(validated.report, reps);
 
-  const insert = await insertReport(validated.report);
+  const insert = await step("insert", () => insertReport(validated.report));
   if (insert.error) {
     return res.status(insert.status).json({ error: insert.error });
   }
 
   const email = cleanText(req.body?.reporter_email, 254);
   if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    await notifyReporter(validated.report, cleanText(req.body?.reporter_name, 120), email);
+    await step("notify", () => notifyReporter(validated.report, cleanText(req.body?.reporter_name, 120), email));
   }
 
   return res.status(200).json({ ok: true, id: validated.report.id });

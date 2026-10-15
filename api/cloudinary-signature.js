@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { cloudinaryFolder, configError, issueProofTicket, rateLimit, route, verifyTurnstile } from "./_lib/server.js";
+import { cloudinaryFolder, configError, issueProofTicket, rateLimit, route, stepTimer, verifyTurnstile } from "./_lib/server.js";
 
 const ALLOWED_FORMATS = "jpg,jpeg,png,webp";
 
@@ -17,7 +17,8 @@ function signParams(params, apiSecret) {
 // address per 10 minutes, two allowlisted folders, image formats only, no overwrites, and Cloudinary rejects a
 // signature after one hour. A cleanup proof also needs a Turnstile token here (see docs/SECURITY-NOTES.md).
 export default route("POST", async (req, res) => {
-  await rateLimit(req, "cloudinary-signature", 20, 10 * 60);
+  const step = stepTimer(res);
+  await step("ratelimit", () => rateLimit(req, "cloudinary-signature", 20, 10 * 60));
 
   const apiKey = process.env.CLOUDINARY_API_KEY;
   const apiSecret = process.env.CLOUDINARY_API_SECRET;
@@ -33,7 +34,7 @@ export default route("POST", async (req, res) => {
   const folder = cloudinaryFolder(kind);
   let proofTicket;
   if (kind === "cleanup-proofs") {
-    await verifyTurnstile(req, req.body?.turnstileToken);
+    await step("turnstile", () => verifyTurnstile(req, req.body?.turnstileToken));
     proofTicket = issueProofTicket(req);
   }
 
