@@ -15,6 +15,21 @@ export class HttpError extends Error {
 
 // Server misconfiguration (a missing secret, a bad env value): the caller gets a generic 503, the detail
 // goes to the log and Sentry only.
+// Server-Timing: how long each step of a request took, readable with `curl -i` or in the browser's network panel.
+// Names and durations only. The header is rewritten after every step, so an early return still carries it.
+export function stepTimer(res) {
+  const marks = [];
+  return async (name, work) => {
+    const start = performance.now();
+    try {
+      return await work();
+    } finally {
+      marks.push(`${name};dur=${Math.round(performance.now() - start)}`);
+      if (!res.headersSent) res.setHeader("Server-Timing", marks.join(", "));
+    }
+  };
+}
+
 export function configError(detail) {
   const error = new HttpError(503, "Temporarily unavailable. Please try again later.");
   error.detail = detail;

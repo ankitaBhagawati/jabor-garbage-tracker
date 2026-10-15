@@ -6,19 +6,21 @@ export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimat
   validateUploadImage(imageFile, "Cleanup proof");
   if (!turnstileToken) throw new Error("Please complete the human check.");
 
-  // Cheap check before spending an image upload; /api/cleanup-proofs re-checks server-side.
+  // Cheap check before spending an image upload (it runs while the photo is compressed); /api/cleanup-proofs
+  // re-checks server-side.
   const reportParams = new URLSearchParams();
   reportParams.set("select", "id,status");
   reportParams.set("id", `eq.${reportId}`);
   reportParams.set("limit", "1");
-  const reports = await restJson(`/rest/v1/public_reports?${reportParams.toString()}`);
-  const report = Array.isArray(reports) ? reports[0] : null;
-  if (!report || !ACTIVE_REPORT_STATUSES.includes(report.status)) {
-    throw new Error("This report is not available for cleanup proof.");
-  }
+  const available = restJson(`/rest/v1/public_reports?${reportParams.toString()}`).then(reports => {
+    const report = Array.isArray(reports) ? reports[0] : null;
+    if (!report || !ACTIVE_REPORT_STATUSES.includes(report.status)) {
+      throw new Error("This report is not available for cleanup proof.");
+    }
+  });
 
   // Supabase stores only this Cloudinary secure URL; no image bytes go to Supabase Storage.
-  const { url: imageUrl, proofTicket } = await uploadImageToCloudinary(imageFile, "cleanup-proofs", turnstileToken);
+  const { url: imageUrl, proofTicket } = await uploadImageToCloudinary(imageFile, "cleanup-proofs", turnstileToken, available);
   return apiJson("/api/cleanup-proofs", {
     body: {
       report_id: reportId,
