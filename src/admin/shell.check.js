@@ -22,6 +22,7 @@ assert.deepEqual(N.navFor("super_admin").map(i => i.label), ["Dashboard", "Repor
 assert.ok(!N.navFor("municipality_admin").some(i => /add admins/i.test(i.label)), "Add admins is for super admins only");
 const extra = [{ id: "cleanup", label: "Cleanup Verification" }];
 assert.deepEqual(N.navFor("super_admin", extra).map(i => i.id), [...order, "admins", "cleanup"], "the owner's older screens follow the pages");
+assert.deepEqual(N.navFor("municipality_admin", extra).map(i => i.id), [...order, "cleanup"], "a municipality admin reviews cleanup proofs too");
 // a role-limited item shows only to that role
 N.NAV.push({ id: "only-municipality", label: "X", icon: "audit", roles: ["municipality_admin"] });
 assert.ok(N.navFor("municipality_admin").some(i => i.id === "only-municipality"));

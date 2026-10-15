@@ -32,11 +32,11 @@ const query = plan => new URLSearchParams(plan.path.split("?")[1]);
 
 // ── Part 1a: role x table x operation ────────────────────────────────────────
 const EXPECTED = {
-  super_admin: { reports: "select,update", cleanup_proofs: "select,update", report_contacts: "select", audit_log: "select", wards: "select", ward_localities: "select", municipalities: "select", staff_profiles: "select" },
-  municipality_admin: { reports: "select,update", audit_log: "select", wards: "select", municipalities: "select", staff_profiles: "select" },
+  super_admin: { reports: "select,update", cleanup_proofs: "select", report_contacts: "select", audit_log: "select", wards: "select", ward_localities: "select", municipalities: "select", staff_profiles: "select" },
+  municipality_admin: { reports: "select,update", cleanup_proofs: "select", audit_log: "select", wards: "select", municipalities: "select", staff_profiles: "select" },
 };
 const SELECT = {
-  reports: "id,status,ward_id", cleanup_proofs: "*", report_contacts: "report_id,name", audit_log: "action,created_at", wards: "id,number",
+  reports: "id,status,ward_id", cleanup_proofs: "*,reports!inner(id)", report_contacts: "report_id,name", audit_log: "action,created_at", wards: "id,number",
   ward_localities: "id,name", municipalities: "id,name", staff_profiles: "user_id,role",
 };
 const PATCH_BODY = { reports: { admin_note: "x" }, cleanup_proofs: { status: "approved" } };
@@ -59,7 +59,7 @@ for (const [role, staff] of [["super_admin", SUPER], ["municipality_admin", MUNI
   }
 }
 // Denied cells fail because of policy, not because the sample was malformed.
-for (const [staff, table, op] of [[MUNI, "report_contacts", "select"], [MUNI, "cleanup_proofs", "select"], [MUNI, "ward_localities", "select"], [SUPER, "authority_contacts", "select"], [MUNI, "wards", "update"], [SUPER, "reports", "insert"], [SUPER, "reports", "delete"]]) {
+for (const [staff, table, op] of [[MUNI, "report_contacts", "select"], [SUPER, "cleanup_proofs", "update"], [MUNI, "cleanup_proofs", "update"], [MUNI, "ward_localities", "select"], [SUPER, "authority_contacts", "select"], [MUNI, "wards", "update"], [SUPER, "reports", "insert"], [SUPER, "reports", "delete"]]) {
   const request = op === "select" ? { path: `/rest/v1/${table}?select=id&limit=1`, method: "GET" } : { path: `/rest/v1/${table}?id=eq.${ID}`, method: op === "insert" ? "POST" : op === "delete" ? "DELETE" : "PATCH", body: { name: "x" } };
   try { authorize(staff, request); assert.fail("allowed"); } catch (e) { assert.ok(["table", "operation"].includes(e.reason), `${table} ${op}: ${e.reason}`); }
 }
@@ -207,11 +207,28 @@ refused(() => authorize(MUNI, { path: P, method: "DELETE" }), "operation");
 // a super admin may hide and restore, but not set the system stamps or another table's columns
 assert.doesNotThrow(() => patch(SUPER, P, { is_deleted: true, updated_at: "2026-10-10T00:00:00Z" }, "return=minimal"));
 for (const key of ["cleaned_marked_by", "cleaned_marked_at", "municipality_id", "photo_url", "embedding", "source"]) refused(() => patch(SUPER, P, { [key]: "x" }), "body-key");
-// cleanup proofs: approve and reject, as the current admin screen does
-assert.doesNotThrow(() => patch(SUPER, `/rest/v1/cleanup_proofs?id=eq.${ID}`, { status: "approved", updated_at: "x" }, "return=representation"));
-assert.doesNotThrow(() => patch(SUPER, `/rest/v1/cleanup_proofs?id=eq.${ID}`, { status: "rejected", admin_notes: "no", updated_at: "x" }));
-refused(() => patch(SUPER, `/rest/v1/cleanup_proofs?id=eq.${ID}`, { status: "active" }), "body-status");
-refused(() => patch(SUPER, `/rest/v1/cleanup_proofs?id=eq.${ID}`, { image_url: "x" }), "body-key");
+// cleanup proofs: nobody PATCHes a proof any more; a review is the review_cleanup_proof RPC (below)
+for (const staff of [SUPER, MUNI]) {
+  refused(() => patch(staff, `/rest/v1/cleanup_proofs?id=eq.${ID}`, { status: "approved" }), "operation");
+  refused(() => patch(staff, `/rest/v1/cleanup_proofs?id=eq.${ID}`, { image_url: "x" }), "operation");
+}
+// a municipality admin lists proofs of their own municipality only: the server filters on the embedded report
+{
+  const PROOFS = "/rest/v1/cleanup_proofs?select=*,reports!inner(id,municipality_id)&status=eq.pending&order=created_at.desc";
+  const q = query(get(MUNI, PROOFS));
+  assert.equal(q.get("reports.municipality_id"), `eq.${M1}`);
+  assert.equal(q.get("status"), "eq.pending");
+  // a super admin is not narrowed
+  assert.equal(query(get(SUPER, PROOFS)).get("reports.municipality_id"), null);
+  // without the inner join the filter would only blank the embed, not drop the row
+  refused(() => get(MUNI, "/rest/v1/cleanup_proofs?select=*"), "scope-embed");
+  refused(() => get(MUNI, "/rest/v1/cleanup_proofs?select=*,reports(id)"), "scope-embed");
+  refused(() => get(MUNI, "/rest/v1/cleanup_proofs?select=*,r:reports!inner(id)"), "scope-embed");
+  // choosing the municipality, or widening it with or=, is refused
+  refused(() => get(MUNI, `${PROOFS}&reports.municipality_id=eq.${M2}`), "scope-key");
+  refused(() => get(MUNI, `/rest/v1/cleanup_proofs?select=*,reports!inner(id)&or=(reports.municipality_id.eq.${M2})`), "logic-column");
+  refused(() => get(MUNI, `/rest/v1/cleanup_proofs?select=*,reports!inner(id)&municipality_id=eq.${M2}`), "param-key");
+}
 
 // edge functions
 for (const fn of ["jabor-recommendations", "jabor-execute", "jabor-embed"]) {
@@ -268,8 +285,27 @@ for (const path of ["/rest/v1/rpc/auto_clean_old_reports", "/rest/v1/rpc/normali
   for (const staff of [SUPER, MUNI]) refused(() => authorize(staff, { path, method: "POST", body: { p_days: 30, p_municipality: M2U } }));
 }
 // the two roles' view of the allowlist
-assert.deepEqual(summary("super_admin").rpc, ["monthly_ward_report", "ward_hotspots"]);
-assert.deepEqual(summary("municipality_admin").rpc, ["monthly_ward_report", "ward_hotspots"]);
+assert.deepEqual(summary("super_admin").rpc, ["review_cleanup_proof", "monthly_ward_report", "ward_hotspots"]);
+assert.deepEqual(summary("municipality_admin").rpc, ["review_cleanup_proof", "monthly_ward_report", "ward_hotspots"]);
+
+// cleanup proof review: a municipality admin's municipality is the server's; a super admin names the report's
+{
+  const review = { p_proof: ID, p_decision: "approved", p_note: null };
+  assert.deepEqual(JSON.parse(rpc(MUNI, "review_cleanup_proof", review).body), { p_municipality: M1, ...review });
+  assert.deepEqual(JSON.parse(rpc(MUNI, "review_cleanup_proof", { ...review, p_decision: "rejected", p_note: "blurry" }).body), { p_municipality: M1, ...review, p_decision: "rejected", p_note: "blurry" });
+  refused(() => rpc(MUNI, "review_cleanup_proof", { ...review, p_municipality: M2 }), "scope-key");
+  refused(() => rpc(MUNI, "review_cleanup_proof", { ...review, p_municipality: null }), "scope-key");
+  refused(() => authorize({ ...MUNI, municipalityId: null }, { path: "/rest/v1/rpc/review_cleanup_proof", method: "POST", body: review }), "scope-missing");
+  assert.deepEqual(JSON.parse(rpc(SUPER, "review_cleanup_proof", { ...review, p_municipality: M2 }).body), { p_municipality: M2, ...review });
+  assert.deepEqual(JSON.parse(rpc(SUPER, "review_cleanup_proof", { ...review, p_municipality: null }).body), { p_municipality: null, ...review });
+  refused(() => rpc(SUPER, "review_cleanup_proof", review), "body-key");
+  for (const bad of ["cleaned", "active", "pending", "", null, ["approved"]]) refused(() => rpc(MUNI, "review_cleanup_proof", { ...review, p_decision: bad }), "rpc-arg");
+  for (const bad of ["x", `${ID}'`, null, 1]) refused(() => rpc(MUNI, "review_cleanup_proof", { ...review, p_proof: bad }), "rpc-arg");
+  for (const bad of ["x".repeat(2001), 1, { a: 1 }]) refused(() => rpc(MUNI, "review_cleanup_proof", { ...review, p_note: bad }), "rpc-arg");
+  refused(() => rpc(MUNI, "review_cleanup_proof", { p_proof: ID, p_decision: "approved" }), "body-key");
+  // the report functions still need a named municipality
+  for (const name of ["monthly_ward_report", "ward_hotspots"]) refused(() => rpc(SUPER, name, { ...(name === "ward_hotspots" ? { p_days: 30 } : { p_month: "2026-08-01" }), p_municipality: null }), "rpc-arg");
+}
 
 // ── Part 1d: everything the current admin screens send is still allowed for a super admin ──
 {
@@ -277,7 +313,7 @@ assert.deepEqual(summary("municipality_admin").rpc, ["monthly_ward_report", "war
   const params = o => new URLSearchParams(o).toString();
   const REPORT_SELECT = "id,constituency,district,lok_sabha_seat,mla,mla_party,mp,mp_party,area,landmark,waste_type,description,photo_url,lat,lng,status,assigned_to,rejected_at,is_deleted,created_at,updated_at,tweeted_at,emailed_at";
   for (const path of [
-    `/rest/v1/cleanup_proofs?${params({ select: "*,reports(id,photo_url,area,landmark,district,constituency,description,waste_type,mla,mp,created_at,status)", status: "eq.pending", order: "created_at.desc" })}`,
+    `/rest/v1/cleanup_proofs?${params({ select: "*,reports!inner(id,photo_url,area,landmark,district,constituency,description,waste_type,mla,mp,created_at,status,municipality_id)", status: "eq.pending", order: "created_at.desc" })}`,
     `/rest/v1/reports?${params({ select: REPORT_SELECT, is_deleted: "eq.false", status: "in.(verified,pending,active,reported,open)", order: "created_at.desc" })}`,
     `/rest/v1/reports?${params({ select: REPORT_SELECT, is_deleted: "eq.false", status: "eq.cleaned", order: "updated_at.desc" })}`,
     `/rest/v1/cleanup_proofs?${params({ select: "report_id,image_url,status,created_at,updated_at", report_id: `in.(${ids.join(",")})`, status: "in.(pending,approved)", order: "updated_at.desc" })}`,
@@ -286,9 +322,7 @@ assert.deepEqual(summary("municipality_admin").rpc, ["monthly_ward_report", "war
     `/rest/v1/audit_log?${params({ select: "entity_id,action,actor_email,to_value,note,created_at", entity_type: "eq.report", entity_id: `in.(${ids.join(",")})`, action: "in.(hidden,status_change)", order: "created_at.desc" })}`,
   ]) assert.doesNotThrow(() => get(SUPER, path), path.slice(0, 80));
   for (const [path, body, prefer] of [
-    [`/rest/v1/cleanup_proofs?id=eq.${ID}`, { status: "approved", updated_at: "2026-10-10T00:00:00.000Z" }, "return=representation"],
     [`/rest/v1/reports?id=eq.${ID}`, { status: "cleaned", updated_at: "2026-10-10T00:00:00.000Z" }, "return=representation"],
-    [`/rest/v1/cleanup_proofs?id=eq.${ID}`, { status: "rejected", admin_notes: "", updated_at: "2026-10-10T00:00:00.000Z" }, "return=representation"],
     [`/rest/v1/reports?id=eq.${ID}`, { is_deleted: true, updated_at: "2026-10-10T00:00:00.000Z" }, "return=minimal"],
     [`/rest/v1/reports?id=eq.${ID}`, { is_deleted: false, invalid_reason: null, admin_note: "ok" }, "return=representation"],
     [`/rest/v1/reports?id=eq.${ID}`, { status: "active", admin_note: "Restored from the Hidden tab" }, "return=representation"],

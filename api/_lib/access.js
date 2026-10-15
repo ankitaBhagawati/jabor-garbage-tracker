@@ -60,17 +60,19 @@ const TABLES = {
     scope: { municipality_admin: "municipality_id" },
   },
   cleanup_proofs: {
-    select: ["super_admin"],
-    update: ["super_admin"],
+    // Read only. A review (approve or reject) is the review_cleanup_proof RPC, which does the proof and the report
+    // in one transaction. A municipality admin must embed the report with !inner: the proxy then filters on the
+    // report's municipality, so a proof of another municipality never comes back (RLS checks the same again).
+    select: ["super_admin", "municipality_admin"],
     read: ["id", "report_id", "image_url", "submitted_by", "cleaned_date_estimate", "status", "admin_notes", "created_at", "updated_at"],
     star: true,
-    filter: { super_admin: ["id", "status", "report_id", "created_at", "updated_at"] },
-    order: { super_admin: ["created_at", "updated_at"] },
+    filter: { super_admin: ["id", "status", "report_id", "created_at", "updated_at"], municipality_admin: ["id", "status", "report_id", "created_at", "updated_at"] },
+    order: { super_admin: ["created_at", "updated_at"], municipality_admin: ["created_at", "updated_at"] },
     embeds: {
       reports: { columns: ["id", "photo_url", "area", "landmark", "district", "constituency", "description", "waste_type", "mla", "mp", "created_at", "status", "municipality_id", "ward_id"] },
     },
-    statuses: new Set(["approved", "rejected"]),
-    body: { super_admin: ["status", "admin_notes", "updated_at"] },
+    scope: { municipality_admin: "reports.municipality_id" },
+    inner: { municipality_admin: "reports" },
   },
   report_contacts: {
     select: ["super_admin"],
@@ -136,6 +138,16 @@ const FUNCTIONS = { "jabor-recommendations": ["super_admin"], "jabor-execute": [
 // the proxy adds their own, as it does for the table scope.
 const MONTH_START = /^(\d{4})-(\d{2})-01$/;
 const RPCS = {
+  // A super admin names the report's municipality, null for a report outside every municipality.
+  review_cleanup_proof: {
+    roles: ["super_admin", "municipality_admin"],
+    nullMunicipality: true,
+    args: {
+      p_proof: v => typeof v === "string" && UUID.test(v),
+      p_decision: v => v === "approved" || v === "rejected",
+      p_note: v => v === null || (typeof v === "string" && v.length <= 2000),
+    },
+  },
   monthly_ward_report: {
     roles: ["super_admin", "municipality_admin"],
     args: { p_month: v => typeof v === "string" && MONTH_START.test(v) && +MONTH_START.exec(v)[2] >= 1 && +MONTH_START.exec(v)[2] <= 12 && +MONTH_START.exec(v)[1] >= 2020 },
@@ -247,7 +259,8 @@ export function authorize(staff, request) {
     if (keys.length !== allowed.length || keys.some(k => !allowed.includes(k))) deny("body-key");
     for (const [name, valid] of Object.entries(spec.args)) if (!valid(data[name])) deny("rpc-arg");
     const municipality = scoped ? staff.municipalityId : data.p_municipality;
-    if (typeof municipality !== "string" || !UUID.test(municipality)) deny(scoped ? "scope-missing" : "rpc-arg");
+    const named = typeof municipality === "string" && UUID.test(municipality);
+    if (!named && !(municipality === null && !scoped && spec.nullMunicipality)) deny(scoped ? "scope-missing" : "rpc-arg");
     const clean = { p_municipality: municipality };
     for (const name of Object.keys(spec.args)) clean[name] = data[name];
     return { path: pathOnly, method, prefer: undefined, body: JSON.stringify(clean) };
@@ -290,6 +303,9 @@ export function authorize(staff, request) {
   }
 
   if (operation === "select" && !seenKeys.has("select")) deny("select-required");
+  // The server's scope filters on an embedded table: it only narrows the rows when that embed is an inner join.
+  const inner = table.inner?.[role];
+  if (inner && !splitTop(pairs.find(([key]) => key === "select")[1]).some(part => new RegExp(`^${inner}!inner\\(`).test(part))) deny("scope-embed");
   if (operation === "select" && !seenKeys.has("limit")) pairs.push(["limit", String(MAX_LIMIT)]);
 
   let body;

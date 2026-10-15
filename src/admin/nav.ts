@@ -17,8 +17,9 @@ export const NAV: NavItem[] = [
 
 export const navFor = (role: Role, extra: { id: string; label: string }[] = []): NavItem[] => [
   ...NAV.filter(item => !item.roles || item.roles.includes(role)),
-  // the older owner screens the page that mounts the app supplies (Cleanup Verification, Moderation)
-  ...extra.map(({ id, label }): NavItem => ({ id, label, icon: "tool", roles: ["super_admin"] })),
+  // the older screens the page that mounts the app supplies, already chosen for the role (Cleanup Verification for
+  // both roles, Moderation for a super admin)
+  ...extra.map(({ id, label }): NavItem => ({ id, label, icon: "tool" })),
 ];
 
 export const ROLE_LABEL: Record<Role, string> = { super_admin: "Super admin", municipality_admin: "Municipality admin" };

@@ -90,6 +90,8 @@ assert.equal(d("ward_change", { ward_id: null }, { ward_id: W1 }), "Ward: Unassi
 assert.equal(d("ward_change", { ward_id: W1 }, { ward_id: "other-ward-id" }), "Ward: Ward 7 to a ward.");
 assert.equal(d("note_change", { admin_note: null }, { admin_note: "x" }), "Internal note updated.");
 assert.equal(d("note_change", { admin_note: "x" }, { admin_note: null }), "Internal note cleared.");
+assert.equal(d("proof_approved", { status: "pending" }, { status: "approved" }), "Citizen cleanup proof approved.");
+assert.equal(d("proof_rejected", { status: "pending" }, { status: "rejected" }), "Citizen cleanup proof rejected.");
 assert.match(d("report_created", null, { claimed_in_municipality: "yes" }), /inside the municipal area/);
 assert.match(d("report_created", null, {}), /^Report received\.$/);
 assert.equal(d("hidden", null, null), "Hidden from the public site.");

@@ -13,9 +13,8 @@ import {
   hideReport,
 } from "./src/services/reportService.js";
 import {
-  approveCleanupProof,
   fetchPendingCleanupProofs,
-  rejectCleanupProof,
+  reviewCleanupProof,
   uploadCleanupProof,
 } from "./src/services/cleanupService.js";
 import {
@@ -925,7 +924,7 @@ function ReportsManagementView({ onChanged, onPhotoClick }) {
   );
 }
 
-function CleanupVerificationQueue({ onChanged, onPhotoClick }) {
+function CleanupVerificationQueue({ role, onChanged, onPhotoClick }) {
   const [proofs, setProofs] = useState([]);
   const [notes, setNotes] = useState({});
   const [workingId, setWorkingId] = useState("");
@@ -952,7 +951,7 @@ function CleanupVerificationQueue({ onChanged, onPhotoClick }) {
     setWorkingId(proof.id);
     setError("");
     try {
-      await approveCleanupProof(proof.id, proof.report_id);
+      await reviewCleanupProof(proof, "approved", notes[proof.id] || "", role);
       await loadProofs();
       onChanged?.();
     } catch (e) {
@@ -966,7 +965,7 @@ function CleanupVerificationQueue({ onChanged, onPhotoClick }) {
     setWorkingId(proof.id);
     setError("");
     try {
-      await rejectCleanupProof(proof.id, notes[proof.id] || "");
+      await reviewCleanupProof(proof, "rejected", notes[proof.id] || "", role);
       await loadProofs();
       onChanged?.();
     } catch (e) {
@@ -1132,12 +1131,14 @@ function AdminDashboard({ onChanged }) {
   if (session === null) return <AdminEmpty icon={<Glyph name="clock" size={38} />} title="Checking admin session…" text="" />;
   if (!session) return <AdminLoginGate onUnlock={setSession} />;
 
-  // The dashboard, audit log and Hidden tabs are in src/admin for both roles. The owner also keeps the
-  // older moderation screens (AI recommendations and proof review), which stay here.
-  const extraTabs = session.role === "super_admin" ? [
-    { id: "cleanup", label: "Cleanup Verification", render: ({ onPhotoClick }) => <CleanupVerificationQueue onChanged={onChanged} onPhotoClick={onPhotoClick} /> },
-    { id: "moderation", label: "Moderation", render: ({ onPhotoClick }) => <ReportsManagementView onChanged={onChanged} onPhotoClick={onPhotoClick} /> },
-  ] : [];
+  // The dashboard, audit log and Hidden tabs are in src/admin for both roles. Proof review stays here and is for
+  // both roles (a municipality admin sees their own municipality's proofs only); AI moderation is the owner's.
+  const extraTabs = [
+    { id: "cleanup", label: "Cleanup Verification", render: ({ onPhotoClick }) => <CleanupVerificationQueue role={session.role} onChanged={onChanged} onPhotoClick={onPhotoClick} /> },
+    ...(session.role === "super_admin" ? [
+      { id: "moderation", label: "Moderation", render: ({ onPhotoClick }) => <ReportsManagementView onChanged={onChanged} onPhotoClick={onPhotoClick} /> },
+    ] : []),
+  ];
 
   return (
     <Suspense fallback={<Spinner />}>

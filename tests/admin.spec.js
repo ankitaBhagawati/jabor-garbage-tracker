@@ -133,8 +133,7 @@ test.describe("municipality admin", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Dashboard");
     await expect(page.locator(".adm-role-label")).toHaveText("JMB Admin");
     await expect(page.getByLabel("Municipality")).toHaveCount(0);
-    await expect(page.getByRole("navigation", { name: "Admin sections" }).getByRole("link")).toHaveText(["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log"]);
-    await expect(page.getByRole("link", { name: "Cleanup Verification" })).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Admin sections" }).getByRole("link")).toHaveText(["Dashboard", "Reports", "Hotspots", "Monthly report", "Audit log", "Cleanup Verification"]);
     await expect(page.getByRole("link", { name: "Moderation" })).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Admin sections" }).getByRole("link", { name: "Hidden" })).toHaveCount(0); // Hidden is a tab of Reports now
 
@@ -148,6 +147,13 @@ test.describe("municipality admin", () => {
     expect((await proxy(page, { path: "/rest/v1/reports?select=id,report_contacts(*)", method: "GET" })).status).toBe(403);
     expect((await proxy(page, { path: "/rest/v1/reports?select=id&municipality_id=eq.00000000-0000-4000-8000-000000000000", method: "GET" })).status).toBe(403);
     expect((await proxy(page, { path: "/rest/v1/cleanup_proofs?select=id", method: "GET" })).status).toBe(403);
+    // cleanup proofs: only with the report joined, and then only their own municipality's
+    const proofs = await proxy(page, { path: "/rest/v1/cleanup_proofs?select=id,reports!inner(municipality_id)", method: "GET" });
+    expect(proofs.status).toBe(200);
+    expect(new Set(proofs.body.map(p => p.reports.municipality_id)).size).toBeLessThanOrEqual(1);
+    expect((await proxy(page, { path: `/rest/v1/cleanup_proofs?id=eq.${"0".repeat(8)}-0000-4000-8000-${"0".repeat(12)}`, method: "PATCH", body: { status: "approved" } })).status).toBe(403);
+    await page.getByRole("link", { name: "Cleanup Verification" }).click();
+    await expect(page.getByRole("heading", { name: /Cleanup Proofs/ })).toBeVisible();
     expect((await proxy(page, { path: "/rest/v1/reports?select=id", method: "GET", role: "super_admin" })).status).toBe(400);
   });
 

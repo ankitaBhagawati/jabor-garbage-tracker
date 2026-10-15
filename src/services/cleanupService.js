@@ -1,4 +1,4 @@
-import { adminRestJson, apiJson, encodeFilter, restJson } from "./supabaseRest.js";
+import { adminRestJson, apiJson, restJson } from "./supabaseRest.js";
 import { uploadImageToCloudinary, validateUploadImage } from "./cloudinaryService.js";
 import { ACTIVE_REPORT_STATUSES } from "./reportService.js";
 
@@ -32,40 +32,17 @@ export async function uploadCleanupProof(reportId, imageFile, cleanedDateEstimat
 
 export function fetchPendingCleanupProofs() {
   const params = new URLSearchParams();
-  params.set("select", "*,reports(id,photo_url,area,landmark,district,constituency,description,waste_type,mla,mp,created_at,status)");
+  // !inner: for a municipality admin the admin proxy filters on the report's municipality.
+  params.set("select", "*,reports!inner(id,photo_url,area,landmark,district,constituency,description,waste_type,mla,mp,created_at,status,municipality_id)");
   params.set("status", "eq.pending");
   params.set("order", "created_at.desc");
   return adminRestJson(`/rest/v1/cleanup_proofs?${params.toString()}`);
 }
 
-export async function approveCleanupProof(cleanupProofId, reportId) {
-  await adminRestJson(`/rest/v1/cleanup_proofs?id=eq.${encodeFilter(cleanupProofId)}`, {
-    method: "PATCH",
-    prefer: "return=representation",
-    body: {
-      status: "approved",
-      updated_at: new Date().toISOString(),
-    },
-  });
-
-  return adminRestJson(`/rest/v1/reports?id=eq.${encodeFilter(reportId)}`, {
-    method: "PATCH",
-    prefer: "return=representation",
-    body: {
-      status: "cleaned",
-      updated_at: new Date().toISOString(),
-    },
-  });
-}
-
-export function rejectCleanupProof(cleanupProofId, adminNotes = "") {
-  return adminRestJson(`/rest/v1/cleanup_proofs?id=eq.${encodeFilter(cleanupProofId)}`, {
-    method: "PATCH",
-    prefer: "return=representation",
-    body: {
-      status: "rejected",
-      admin_notes: adminNotes,
-      updated_at: new Date().toISOString(),
-    },
-  });
+// Approve (closes the report) or reject, in one database transaction. The proxy replaces p_municipality with a
+// municipality admin's own (who must not send it); a super admin sends the report's (null outside every municipality).
+export function reviewCleanupProof(proof, decision, note, role) {
+  const body = { p_proof: proof.id, p_decision: decision, p_note: note || null };
+  if (role === "super_admin") body.p_municipality = proof.reports?.municipality_id ?? null;
+  return adminRestJson("/rest/v1/rpc/review_cleanup_proof", { method: "POST", body });
 }

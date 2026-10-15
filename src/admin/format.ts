@@ -25,6 +25,7 @@ export const formatDateTime = (iso: string | null | undefined) => (iso ? DATE_TI
 const REPORT_ACTION_LABEL: Record<string, string> = {
   report_created: "Report received", status_change: "Status changed", ward_change: "Ward changed", assignment_change: "Assignment changed",
   cleaned_details_change: "Cleaned details changed", note_change: "Note changed", hidden: "Hidden", unhidden: "Restored",
+  proof_approved: "Cleanup proof approved", proof_rejected: "Cleanup proof rejected",
 };
 export const ACTION_LABEL: Record<string, string> = {
   ...REPORT_ACTION_LABEL,
@@ -64,6 +65,8 @@ export function describeAudit(row: Pick<AuditRow, "action" | "from_value" | "to_
     case "staff_account_activated": return `${to.email ? String(to.email) : "A municipal admin"} was reactivated.`;
     case "staff_account_deactivated": return `${to.email ? String(to.email) : "A municipal admin"} was deactivated and lost access at once.`;
     case "export": return `Downloaded a CSV of ${Number(to.rows ?? 0).toLocaleString("en-IN")} reports${to.filters ? " with filters" : ", no filters"}.`;
+    case "proof_approved": return "Citizen cleanup proof approved.";
+    case "proof_rejected": return "Citizen cleanup proof rejected.";
     case "hidden": return "Hidden from the public site.";
     case "unhidden": return "Restored to the public site.";
     case "staff_created": return `Staff account created${to.role ? ` (${String(to.role).replace("_", " ")})` : ""}.`;
