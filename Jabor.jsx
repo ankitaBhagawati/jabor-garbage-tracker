@@ -1389,7 +1389,9 @@ export default function Jabor() {
         updated_at: now,
       };
       setReports(prev => withPreservedReport(prev, localReport));
-      await loadPublicReports(feedFilters, localReport);
+      // The new report is already in the list; refresh the feed in the background instead of holding up the
+      // "submitted" screen for it.
+      loadPublicReports(feedFilters, localReport);
       setPreview(null);
       setForm({ district: "", constituency: "", area: "", landmark: "", waste_type: "mixed", description: "", photo: null, photoPreview: null, anonymous: true, reporterName: "", reporterEmail: "", muniAnswer: "", wardChoice: "" });
       setTurnstileToken("");

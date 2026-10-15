@@ -127,6 +127,20 @@ function validatePayload(body) {
   };
 }
 
+// MLA and MP per constituency, cached per warm function instance (reference data that changes a few times a
+// decade). ponytail: a plain TTL, so a corrected MLA or MP shows on new reports within CACHE_MS.
+const CACHE_MS = 5 * 60 * 1000;
+const cache = new Map();
+function cached(key, load) {
+  const hit = cache.get(key);
+  if (hit && hit.until > Date.now()) return hit.value;
+  const value = load();
+  cache.set(key, { value, until: Date.now() + CACHE_MS });
+  // a failed or empty lookup is not kept
+  value.then(v => { if (!v) cache.delete(key); }, () => cache.delete(key));
+  return value;
+}
+
 // Representatives come from our own tables, never from the client.
 async function lookupRepresentatives(constituency) {
   const supabaseUrl = env("SUPABASE_URL") || env("VITE_SUPABASE_URL");
@@ -262,7 +276,12 @@ export default route("POST", async (req, res) => {
 
   // Municipality and ward are decided here from the chosen district and constituency and the
   // answer to the municipal-area question. A municipality_id in the request is never read.
-  const municipalities = await step("municipalities", () => serviceRest("/rest/v1/municipalities?is_active=eq.true&select=id,name,settings"));
+  // The two lookups do not depend on each other.
+  const [municipalities, reps] = await Promise.all([
+    // Municipalities are not cached: switching one off applies to the next report.
+    step("municipalities", () => serviceRest("/rest/v1/municipalities?is_active=eq.true&select=id,name,settings")),
+    step("representatives", () => cached(`reps:${validated.report.constituency}`, () => lookupRepresentatives(validated.report.constituency))),
+  ]);
   Object.assign(validated.report, await step("placement", () => resolvePlacement(req.body || {}, {
     municipalities,
     wardBelongs: async (wardId, municipalityId) => {
@@ -272,7 +291,6 @@ export default route("POST", async (req, res) => {
   })));
   validated.report.source = "public";
 
-  const reps = await step("representatives", () => lookupRepresentatives(validated.report.constituency));
   if (!reps) return res.status(400).json({ error: "Unknown constituency." });
   Object.assign(validated.report, reps);
 

@@ -53,14 +53,18 @@ export async function prepareImageForUpload(file) {
 
     let quality = 0.82;
     let blob = await canvasToBlob(canvas, "image/webp", quality);
+    // Safari, and so every iPhone browser, cannot encode WebP: it hands back a PNG several times the size, and
+    // ignores the quality. Encode JPEG there instead.
+    const type = blob?.type === "image/webp" ? "image/webp" : "image/jpeg";
+    if (type === "image/jpeg") blob = await canvasToBlob(canvas, type, quality);
     while (blob && blob.size > TARGET_BYTES && quality > 0.42) {
       quality -= 0.08;
-      blob = await canvasToBlob(canvas, "image/webp", quality);
+      blob = await canvasToBlob(canvas, type, quality);
     }
 
-    if (!blob) return file;
-    const name = `${file.name?.replace(/\.[^.]+$/, "") || "jabor-image"}.webp`;
-    const preparedFile = new File([blob], name, { type: "image/webp" });
+    if (!blob || blob.type !== type || blob.size >= file.size) return file;
+    const name = `${file.name?.replace(/\.[^.]+$/, "") || "jabor-image"}.${type === "image/webp" ? "webp" : "jpg"}`;
+    const preparedFile = new File([blob], name, { type });
     validateUploadImage(preparedFile);
     return preparedFile;
   } catch {
@@ -89,11 +93,16 @@ async function getUploadSignature(folder, turnstileToken) {
 }
 
 // Returns the stored image URL and, for a cleanup proof (which needs a Turnstile token to be signed), the
-// proofTicket that /api/cleanup-proofs accepts in place of the spent token.
-export async function uploadImageToCloudinary(file, folder, turnstileToken) {
+// proofTicket that /api/cleanup-proofs accepts in place of the spent token. `ready` (optional) is a check that must
+// pass before any bytes are sent; it runs alongside the compression and the signature request.
+export async function uploadImageToCloudinary(file, folder, turnstileToken, ready) {
   assertCloudinaryConfig();
-  const preparedFile = await prepareImageForUpload(file);
-  const signatureData = await getUploadSignature(folder, turnstileToken);
+  // The signature is a round trip to our API; ask for it while the photo is being compressed.
+  const [preparedFile, signatureData] = await Promise.all([
+    prepareImageForUpload(file),
+    getUploadSignature(folder, turnstileToken),
+    ready,
+  ]);
   const formData = new FormData();
   formData.append("file", preparedFile);
   formData.append("api_key", signatureData.apiKey);

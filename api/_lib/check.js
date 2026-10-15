@@ -132,6 +132,7 @@ const wardOwner = { [WARD_J1]: JORHAT, [WARD_O1]: OTHER };
 
 let inserted = [];
 const jsonResponse = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
+let mlaLookups = 0;
 globalThis.fetch = async (url, init = {}) => {
   url = String(url);
   if (url.includes("challenges.cloudflare.com")) return jsonResponse({ success: true });
@@ -141,6 +142,7 @@ globalThis.fetch = async (url, init = {}) => {
     const municipality = /municipality_id=eq\.([^&]+)/.exec(url)?.[1];
     return jsonResponse(wardOwner[id] && wardOwner[id] === municipality ? [{ id }] : []);
   }
+  if (url.includes("/rest/v1/mla_list")) mlaLookups++;
   if (url.includes("/rest/v1/mla_list")) return jsonResponse([{ name: "Test MLA", party: "T", lok_sabha_seat: "" }]);
   if (url.includes("/rest/v1/reports") && init.method === "POST") { inserted.push(JSON.parse(init.body)); return new Response(null, { status: 201 }); }
   throw new Error(`unexpected request in test: ${url}`);
@@ -187,6 +189,8 @@ for (const [name, extra, status, expected] of cases) {
     assert.ok(out.body.error && !/supabase|sql|uuid/i.test(out.body.error), `${name}: plain error message`);
   }
 }
+// MLA and MP are looked up once per constituency per warm instance, not once per report.
+assert.equal(mlaLookups, 1, "the representatives lookup is cached");
 // Anything else a client sends is ignored: only the whitelisted fields reach the row.
 const forged = await submitReport({ municipality_answer: "no", status: "cleaned", is_deleted: true, cleaned_by_type: "jmb", source: "demo", in_municipality: true, admin_note: "x" });
 assert.equal(forged.status, 200);
