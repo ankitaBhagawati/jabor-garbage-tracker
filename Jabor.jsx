@@ -128,7 +128,7 @@ const db = {
 // after each submission attempt. Load/render failures are shown on screen
 // (with the Cloudflare error code) instead of failing silently, because a
 // silent failure blocks every submission with no clue why.
-function TurnstileWidget({ onToken, controlRef }) {
+function TurnstileWidget({ onToken, controlRef, fit = false }) {
   const containerRef = useRef(null);
   const [status, setStatus] = useState("loading");
   const [errorCode, setErrorCode] = useState("");
@@ -164,6 +164,8 @@ function TurnstileWidget({ onToken, controlRef }) {
       try {
         widgetId = window.turnstile.render(containerRef.current, {
           sitekey: TURNSTILE_SITE_KEY,
+          // fit: as wide as the fields (flexible needs 300px or more), else the 150px compact widget.
+          ...(fit ? { size: containerRef.current.clientWidth >= 300 ? "flexible" : "compact" } : {}),
           callback: token => {
             if (cancelled) return;
             setStatus("ready");
@@ -229,15 +231,15 @@ function TurnstileWidget({ onToken, controlRef }) {
         try { window.turnstile.remove(widgetId); } catch { /* already removed */ }
       }
     };
-  }, [onToken, controlRef, retryTick]);
+  }, [onToken, controlRef, retryTick, fit]);
 
   if (TURNSTILE_MISSING) {
     return <p role="alert" style={{ textAlign: "center", fontSize: 12, color: "#B42318", margin: "0 0 14px" }}><Glyph name="alert" /> {TURNSTILE_MISSING_MESSAGE}</p>;
   }
   if (!TURNSTILE_SITE_KEY) return null;
   return (
-    <div style={{ marginBottom: 14 }}>
-      <div ref={containerRef} style={{ display: "flex", justifyContent: "center" }} />
+    <div style={{ marginBottom: fit ? 0 : 14 }}>
+      <div ref={containerRef} style={fit ? { textAlign: "center" } : { display: "flex", justifyContent: "center" }} />
       {status === "loading" && (
         <p style={{ textAlign: "center", fontSize: 12, color: "#3C4A42", margin: "6px 0 0" }}>
           Loading security check…
@@ -1043,6 +1045,13 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
   const [turnstileToken, setTurnstileToken] = useState("");
   const turnstileRef = useRef(null);
   const onTurnstileToken = useCallback(token => setTurnstileToken(token), []);
+  const [preview, setPreview] = useState("");
+  useEffect(() => {
+    if (!image) { setPreview(""); return undefined; }
+    const url = URL.createObjectURL(image);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [image]);
 
   const submit = async e => {
     e.preventDefault();
@@ -1076,39 +1085,47 @@ function CleanupProofUploadForm({ reportId, onSuccess }) {
 
   return (
     <form onSubmit={submit} className="cleanup-form">
-      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10, color: "#10B981" }}>Reply with cleanup proof</div>
+      <div className="cleanup-title">Reply with cleanup proof</div>
+      <label className="cleanup-file">
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={e => {
+            const file = e.target.files?.[0] || null;
+            try {
+              if (file) validateUploadImage(file, "Cleanup proof");
+              setImage(file);
+              setMessage("");
+            } catch (error) {
+              e.target.value = "";
+              setImage(null);
+              setMessage(error.message || "Please choose a valid cleanup proof image.");
+            }
+          }}
+        />
+        {preview ? <img src={preview} alt="" className="cleanup-file-thumb" /> : <span className="cleanup-file-thumb"><Glyph name="camera" size={18} /></span>}
+        <span className="cleanup-file-btn">{image ? "Change" : "Choose photo"}</span>
+        <span className="cleanup-file-name">{image ? image.name : "No photo yet"}</span>
+      </label>
+      <label className="lbl" htmlFor={`cleaned-${reportId}`}>WHEN WAS IT CLEANED?</label>
       <input
-        className="inp"
-        type="file"
-        accept="image/jpeg,image/png,image/webp"
-        onChange={e => {
-          const file = e.target.files?.[0] || null;
-          try {
-            if (file) validateUploadImage(file, "Cleanup proof");
-            setImage(file);
-            setMessage("");
-          } catch (error) {
-            e.target.value = "";
-            setImage(null);
-            setMessage(error.message || "Please choose a valid cleanup proof image.");
-          }
-        }}
-      />
-      <input
+        id={`cleaned-${reportId}`}
         className="inp"
         value={cleanedDateEstimate}
         onChange={e => setCleanedDateEstimate(e.target.value)}
-        placeholder="When was it cleaned? e.g. today, yesterday"
+        placeholder="e.g. today, yesterday"
       />
+      <label className="lbl" htmlFor={`cleaner-${reportId}`}>YOUR NAME (OPTIONAL)</label>
       <input
+        id={`cleaner-${reportId}`}
         className="inp"
         value={submittedBy}
         onChange={e => setSubmittedBy(e.target.value)}
-        placeholder="Your name (optional)"
+        placeholder="Your name"
       />
-      <TurnstileWidget onToken={onTurnstileToken} controlRef={turnstileRef} />
+      <TurnstileWidget onToken={onTurnstileToken} controlRef={turnstileRef} fit />
       {message && <p style={{ fontSize: 12, color: message.includes("submitted") ? "#059669" : "#DC2626" }}>{message}</p>}
-      <button className="btn-p" disabled={loading} type="submit" style={{ width: "100%", padding: 12 }}>
+      <button className="btn-p cleanup-submit" disabled={loading} type="submit">
         {loading ? "Submitting..." : "Submit Cleanup Reply"}
       </button>
     </form>
