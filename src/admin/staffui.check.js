@@ -120,7 +120,7 @@ for (const action of ["export", "staff_created", "staff_changed", "staff_deleted
   assert.ok(optionsFor("super_admin").includes(action), `super_admin: ${action}`);
   assert.ok(!optionsFor("municipality_admin").includes(action), `municipality_admin is not offered ${action}`);
 }
-assert.deepEqual(optionsFor("municipality_admin"), ["report_created", "status_change", "ward_change", "assignment_change", "cleaned_details_change", "note_change", "hidden", "unhidden"]);
+assert.deepEqual(optionsFor("municipality_admin"), ["report_created", "status_change", "ward_change", "assignment_change", "cleaned_details_change", "note_change", "hidden", "unhidden", "proof_approved", "proof_rejected"]);
 assert.ok(!optionsFor("municipality_admin").some(a => /staff|export/.test(a)), "no staff or export action by any name");
 for (const option of F.auditActionOptions("municipality_admin")) assert.equal(option.label, F.ACTION_LABEL[option.value], "the same labels as the rows show");
 // an unknown role is treated as the narrow one

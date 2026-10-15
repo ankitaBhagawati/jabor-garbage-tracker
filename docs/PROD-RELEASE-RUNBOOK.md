@@ -17,7 +17,7 @@ Do not run `supabase link` to production. Every CLI command below passes `--db-u
 
 - **OLD code** = `origin/main` at `fe14c5d` (merge of PR #20, 2026-10-11). **NEW code** = `staging`.
 - Production's database is the pre-T2 schema: no `municipalities`, `wards`, `staff_profiles`, `audit_log`, no `private`
-  schema, no `supabase_migrations` table. Staging has all eleven files in `supabase/migrations/`.
+  schema, no `supabase_migrations` table. Staging has all twelve files in `supabase/migrations/` (the twelfth, `20261015090000_municipality_admin_proof_review`, once it is applied there).
 - Deployment order (differs from `docs/RELEASE.md` in one place, see 3.6): Vercel env vars, then migrations, then edge
   function secrets and deploys, then the merge to `main`.
 
@@ -33,7 +33,7 @@ Do not run `supabase link` to production. Every CLI command below passes `--db-u
 
 ## 1. Migrations on staging and not on production
 
-Ten files, in this order. The baseline (`20261008171232_baseline.sql`) is never executed; it is only marked applied
+Eleven files, in this order. The baseline (`20261008171232_baseline.sql`) is never executed; it is only marked applied
 (3.2). `supabase db push` runs each file in its own transaction and stops at the first failure; files before it stay
 applied. Regenerate this list with `ls supabase/migrations` on the day: any file added after 2026-10-13 belongs in it.
 
@@ -55,6 +55,7 @@ and the four agent tables with the staff member's own token, through `/api/admin
 | 8 | `20261011154754_t5_audit_note_changes` | `reports_audit()` also writes a `note_change` row. | **Yes.** Function only. | `20261011154754_t5_audit_note_changes.down.sql` |
 | 9 | `20261011170000_t6_t7_report_functions` | Two staff-only functions, `monthly_ward_report` and `ward_hotspots` (security invoker, not executable by anon). | **Yes.** New objects, nothing reads them. | `20261011170000_t6_t7_report_functions.down.sql` |
 | 10 | `20261012160000_t13_municipality_admin_hide` | `reports_before_update()` lets a municipality admin hide and restore. | **Yes.** Function only. | `20261012160000_t13_municipality_admin_hide.down.sql` |
+| 11 | `20261015090000_municipality_admin_proof_review` | New `review_cleanup_proof()` (security invoker, approve or reject a pending proof and close the report in one transaction; `authenticated` only). New `cleanup_proofs_audit` trigger (`proof_approved` / `proof_rejected` rows). `authenticated` UPDATE on `cleanup_proofs` narrowed to `status`, `admin_notes`, `updated_at`. | **Yes.** Old code PATCHes a proof with `status`, `admin_notes`, `updated_at` only, all still granted, and its approval now also writes a `proof_approved` audit row. New code needs this file applied first (it calls the function). | `20261015090000_municipality_admin_proof_review.down.sql`. Roll the code back first. |
 
 ### Behaviour changes old code will show after row 3 (none is an error; all need the owner's yes)
 
@@ -139,7 +140,7 @@ The diff must be empty. If not, fix the restore first; a rehearsal on different 
 ```bash
 supabase migration repair --status applied 20261008171232 --db-url "$REHEARSAL_DB_URL"
 supabase migration list --db-url "$REHEARSAL_DB_URL"
-supabase db push --dry-run --db-url "$REHEARSAL_DB_URL"     # must list exactly the ten files of section 1
+supabase db push --dry-run --db-url "$REHEARSAL_DB_URL"     # must list exactly the eleven files of section 1
 supabase db push --db-url "$REHEARSAL_DB_URL"
 ```
 
@@ -215,7 +216,7 @@ supabase migration repair --status applied 20261008171232 --db-url "$PROD_DB_URL
 supabase migration list --db-url "$PROD_DB_URL"
 ```
 
-Expected `migration list`: eleven local versions, remote shows only `20261008171232`.
+Expected `migration list`: twelve local versions, remote shows only `20261008171232`.
 
 ### 3.3 Dry run: the exact expectation
 
@@ -236,6 +237,7 @@ It must print, in this order, and nothing else:
 20261011154754_t5_audit_note_changes.sql
 20261011170000_t6_t7_report_functions.sql
 20261012160000_t13_municipality_admin_hide.sql
+20261015090000_municipality_admin_proof_review.sql
 ```
 
 Stop if the baseline is listed (the repair did not take), if a file is missing, or if any other file appears.
@@ -244,7 +246,7 @@ Stop if the baseline is listed (the repair did not take), if a file is missing, 
 
 ```bash
 supabase db push --db-url "$PROD_DB_URL"
-supabase migration list --db-url "$PROD_DB_URL"      # local and remote columns now match for all eleven
+supabase migration list --db-url "$PROD_DB_URL"      # local and remote columns now match for all twelve
 ```
 
 If a file fails, nothing from that file is applied. Do not edit it. Read the error, then decide with section 8.
@@ -601,7 +603,7 @@ Something is wrong after the release
 +-- Data is being damaged by a migration (wrong rows hidden, auto-clean sweeping reports it should not, audit rows
 |   wrong), and a forward fix is not obvious
       RUN DOWN SCRIPTS, NEWEST FIRST, ONE AT A TIME, checking after each:
-        t13, t6/t7, t5, t3, anon_reports_column_grants, t4, t2 in_progress, t2, align_public_grants, rls_hotfix
+        proof_review, t13, t6/t7, t5, t3, anon_reports_column_grants, t4, t2 in_progress, t2, align_public_grants, rls_hotfix
         psql "$PROD_DB_URL" -v ON_ERROR_STOP=1 -f supabase/rollbacks/<version>_<name>.down.sql
         supabase migration repair --status reverted <version> --db-url "$PROD_DB_URL"
       Roll the Vercel code back FIRST for t4 and t2 (the new code sends the new fields).

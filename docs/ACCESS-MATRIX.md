@@ -38,7 +38,7 @@ Code: `api/_lib/access.js`. Tests: `api/_lib/access.check.js`.
 | Table | super_admin | municipality_admin | Municipality scope added by the server |
 |---|---|---|---|
 | `reports` | S, U | S, U | `municipality_id = own` |
-| `cleanup_proofs` | S, U | - | (not available to municipality admins yet) |
+| `cleanup_proofs` | S | S | `reports.municipality_id = own`, and the select must embed `reports!inner(...)` (else `scope-embed`). Reviews go through the `review_cleanup_proof` RPC, never a PATCH |
 | `report_contacts` | S | - | |
 | `audit_log` | S | S | `municipality_id = own` AND `entity_type = report` (staff rows and export rows are super_admin only) |
 | `wards` | S | S | `municipality_id = own` |
@@ -62,14 +62,13 @@ Code: `api/_lib/access.js`. Tests: `api/_lib/access.check.js`.
   A key may appear once. A municipality admin may never send the scope key (`municipality_id`, `id` on municipalities, `user_id` on staff profiles); the server adds it.
 - **`or=` and `and=`:** every column used anywhere inside, however nested, must be one the role may filter by. So `or=(municipality_id.eq.x,...)` is refused for a municipality admin.
 - **Filters:** `col=op.value` with operators `eq neq gt gte lt lte in is like ilike`, optionally `not.`, on allowed columns only.
-- **`select`:** explicit columns the role may read. `*` only on `cleanup_proofs`. No `embedding`. Embedded tables only where listed (`cleanup_proofs` embeds `reports` for a super admin); `reports?select=*,report_contacts(*)` is refused for everyone.
+- **`select`:** explicit columns the role may read. `*` only on `cleanup_proofs`. No `embedding`. Embedded tables only where listed (`cleanup_proofs` embeds `reports`; for a municipality admin it must be `reports!inner(...)`, the table the server's scope filters on); `reports?select=*,report_contacts(*)` is refused for everyone.
 - **`order`:** up to 3 allowed columns. **`limit`:** 1 to 1000 (1000 is added when absent). **`offset`:** a number.
 - **`Prefer`:** one of `return=minimal`, `return=representation`, `count=exact`. Nothing else (no upsert, rollback or missing=default). `Range` and every other client header are never forwarded.
 - **Body envelope:** only `path`, `method`, `prefer`, `body`. A `role` or `municipality_id` key is refused.
 - **Updates (PATCH):** one row, with `id=eq.<uuid>` as the only filter. Allowed body keys:
   - super_admin on `reports`: `status`, `is_deleted`, `ward_id`, `assigned_to_text`, `due_at`, `cleaned_by_name`, `cleaned_by_type`, `cleaned_at`, `invalid_reason`, `admin_note`, `updated_at`
   - municipality_admin on `reports`: `status`, `ward_id`, `admin_note`, plus `invalid_reason`, `cleaned_by_name`, `cleaned_by_type`, `cleaned_at`, which the status trigger requires with Invalid and Cleaned
-  - super_admin on `cleanup_proofs`: `status` (approved or rejected), `admin_notes`, `updated_at`
   - Statuses are `active`, `in_progress`, `cleaned`, `invalid`; `cleaned_by_type` is `jmb`, `citizen` or `other` (never `auto`). The database trigger still enforces the transition rules and writes `audit_log`.
 - **Errors:** denials return `403 {"error":"Not allowed."}` and are logged with user id, role, route and a reason code, never the query or body. Database errors keep `code` and `message` only.
 
@@ -99,7 +98,7 @@ Code: `api/_lib/access.js`. Tests: `api/_lib/access.check.js`.
 | Table | Who can read | Who can write |
 |---|---|---|
 | `reports` | staff of the municipality (super admin: all); anon only the public columns and public rows | staff update only (trigger limits columns and transitions); no client insert or delete |
-| `cleanup_proofs` | staff through their report; anon the approved ones, five columns | staff update |
+| `cleanup_proofs` | staff through their report; anon the approved ones, five columns | staff of the report's municipality (super admin: all) update `status`, `admin_notes`, `updated_at` only (column grant); a review is `review_cleanup_proof()` |
 | `wards`, `ward_localities`, `municipalities`, `audit_log`, `staff_profiles` | staff of the municipality; super admin all; `staff_profiles` own row only | nobody from the client |
 | `report_contacts`, `authority_contacts`, `escalation_guidelines`, `recommendations_audit` | active super admin only (`private.is_super_admin()`) | `recommendations_audit`: active super admin; others none |
 
@@ -125,7 +124,7 @@ Every request the dashboard sends (tiles, reports page, report drawer, wards, mu
 
 - A municipality admin's update body is limited to status, ward, note and the fields the status rules add (cleaned by, invalid reason). The status trigger and `audit_log` still apply.
 - The audit log gained one action, `note_change`, written when only `admin_note` changes (migration `t5_audit_note_changes`; apply it before deploying the code).
-- The drawer shows the after photo from the public view, not from `cleanup_proofs`, which stays denied to municipality admins.
+- The drawer shows the after photo from the public view, not from `cleanup_proofs`.
 - Nothing in the dashboard sends DELETE, and no map, GPS or contact details are requested for a municipality admin.
 
 ## 8. T6/T7: exports, monthly report, hotspots
@@ -191,4 +190,33 @@ their own municipality; before, only a super admin could.
 - **Screens:** the report drawer has "Hide from public site" (reason required, note optional) and, for a hidden report,
   "Restore to public site". The Hidden tab lets both roles restore.
 - **Not given to municipality admins:** the older owner screen **Moderation** (AI recommendations, which can email
-  authorities and post to X, and reporter contacts) and **Cleanup Verification** (cleanup proofs). Both stay super admin only.
+  authorities and post to X, and reporter contacts), which stays super admin only. **Cleanup Verification** is open to
+  municipality admins since section 11.
+
+## 11. Cleanup proof review for municipality admins
+
+Changed in migration `20261015090000_municipality_admin_proof_review`. A municipality admin lists, approves and rejects
+cleanup proofs for reports of their own municipality; a super admin keeps all of them.
+
+What blocked a municipality admin before, layer by layer:
+
+| Layer | Was | Now |
+|---|---|---|
+| Admin screen (`Jabor.jsx`, `extraTabs`) | The Cleanup Verification tab was added for a super admin only, and `navFor` marked it super admin only | Added for both roles; Moderation stays super admin only |
+| Proxy, read (`access.js`, `cleanup_proofs.select`) | super_admin only | both roles; for a municipality admin the server adds `reports.municipality_id=eq.<own>` and requires `reports!inner(...)` so the filter drops rows |
+| Proxy, write (`cleanup_proofs.update`, `reports.body`) | PATCH for super_admin only; the approve call also PATCHed `reports` with `updated_at`, a key a municipality admin may not send | No PATCH on `cleanup_proofs` for anyone. A review is `POST /rest/v1/rpc/review_cleanup_proof`; the proxy adds a municipality admin's `p_municipality` (sending one is `scope-key`); a super admin names the report's municipality, or `null` for a report outside every municipality |
+| Database, row level security | Already scoped through the report since T2 (`Staff read/update cleanup proofs`) | Unchanged |
+| Database, columns | `authenticated` could update every column of a proof (image, report, name) | `UPDATE (status, admin_notes, updated_at)` only |
+| Database, atomicity | Two separate requests (proof, then report): a failure between them left an approved proof on an open report | `review_cleanup_proof()` (SECURITY INVOKER) does both in one transaction, only for a `pending` proof, and refuses a municipality that is not the report's |
+| Audit | A rejection wrote nothing; an approval only the report's `status_change` | Trigger `cleanup_proofs_audit` writes `proof_approved` or `proof_rejected` (entity_type `report`, the report's id, actor, note) for every review |
+| Edge functions | Not involved (`jabor-execute` and the others never touch proofs) | Unchanged |
+
+| | super_admin | municipality_admin | anon |
+|---|---|---|---|
+| List pending proofs through the proxy | all | own municipality only | no (no session) |
+| `review_cleanup_proof` through the proxy | yes, names the report's municipality | own municipality only | no |
+| The same function called directly in Supabase | yes | own municipality only (another municipality's proof reads as "not waiting") | permission denied |
+| PATCH `cleanup_proofs` through the proxy | 403 | 403 | no |
+
+Tests: `api/_lib/access.check.js` (scope, `scope-embed`, RPC arguments), `src/admin/shell.check.js` (the tab),
+`supabase/tests/database/130_municipality_admin_proof_review.test.sql` (two throwaway municipalities).

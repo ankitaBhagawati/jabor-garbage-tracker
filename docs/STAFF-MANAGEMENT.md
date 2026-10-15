@@ -139,6 +139,16 @@ update public.staff_profiles set is_active = false where email = 'someone@exampl
 
 To remove a login completely, delete the user in Authentication, Users (the profile goes with it).
 
+## What a municipality admin can do once created
+
+For their own municipality only (the server adds the scope, row level security checks it again; details in
+`docs/ACCESS-MATRIX.md`): the Dashboard, Reports (status, ward, note, hide and restore), Hotspots, Monthly report,
+the Audit log (report rows), and **Cleanup Verification**: list pending citizen cleanup proofs, approve one (the
+report closes as Cleaned, cleaned by the citizen) or reject one with a note. Every review writes a `proof_approved` or
+`proof_rejected` audit row with the admin as the actor. A proof for another municipality's report never appears and
+cannot be changed. Needs migration `20261015090000_municipality_admin_proof_review` on the database. Not theirs:
+Add admins, Moderation (AI recommendations, emails to authorities, posts to X), reporter contacts.
+
 ## Rollback
 
 Nothing to roll back in the database: there is no migration. To take the feature out, revert the pull request. Accounts
