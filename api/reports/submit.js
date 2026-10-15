@@ -1,9 +1,8 @@
 import crypto from "node:crypto";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
-import { captureError } from "../_lib/sentry.js";
 import { resolvePlacement } from "../_lib/placement.js";
-import { HttpError, isProduction, serviceRest } from "../_lib/server.js";
+import { configError, isProduction, route, serviceRest } from "../_lib/server.js";
 
 // Server-side chokepoint for public report submissions. The frontend no longer
 // inserts into Supabase directly; every report passes through rate limiting,
@@ -89,7 +88,7 @@ function cleanText(value, maxLength = MAX_TEXT_LENGTH) {
 function validatePayload(body) {
   const cloudName = env("VITE_CLOUDINARY_CLOUD_NAME");
   if (!cloudName) {
-    return { error: "Report submissions are not configured on the server.", status: 500 };
+    throw configError("VITE_CLOUDINARY_CLOUD_NAME is not configured.");
   }
 
   const area = cleanText(body?.area);
@@ -184,7 +183,7 @@ async function insertReport(report) {
   const serviceKey = env("SUPABASE_SERVICE_ROLE_KEY");
   const supabaseKey = serviceKey || env("SUPABASE_ANON_KEY") || env("VITE_SUPABASE_ANON_KEY");
   if (!supabaseUrl || !supabaseKey) {
-    return { status: 500, error: "Report storage is not configured on the server." };
+    throw configError("SUPABASE_URL or a Supabase key is not configured.");
   }
   if (!serviceKey) {
     console.warn("[jabor] SUPABASE_SERVICE_ROLE_KEY is not set - inserting with the anon key; direct anon inserts must stay enabled until it is configured");
@@ -210,22 +209,9 @@ async function insertReport(report) {
   return { status: 200 };
 }
 
-// Unexpected crashes still return 500 through Vercel, but are reported to Sentry first.
-export default async function reportedHandler(req, res) {
-  try {
-    return await handler(req, res);
-  } catch (error) {
-    await captureError(error);
-    throw error;
-  }
-}
-
-async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Method not allowed." });
-  }
-
+// route() checks the method and Origin, rejects malformed JSON with 400, and turns any crash into a generic
+// JSON 500 reported to Sentry.
+export default route("POST", async (req, res) => {
   const ip = getClientIp(req);
 
   // A misconfigured rate limiter must degrade to "no rate limit", never to
@@ -257,8 +243,8 @@ async function handler(req, res) {
   if (!turnstile.ok) {
     // The reason (Cloudflare's error codes) stays in the server log and is never sent to the client.
     console.log(`[jabor] turnstile rejected report submission (ip=${ip}, reason=${turnstile.reason})`);
-    if (turnstile.reason === "missing-secret" || turnstile.reason === "verify-unavailable") {
-      if (turnstile.reason === "missing-secret") console.error("[jabor] TURNSTILE_SECRET_KEY is not set in production: report submissions are refused");
+    if (turnstile.reason === "missing-secret") throw configError("TURNSTILE_SECRET_KEY is not set in production: report submissions are refused");
+    if (turnstile.reason === "verify-unavailable") {
       return res.status(503).json({ error: "The security check is unavailable right now. Please try again later." });
     }
     if (turnstile.reason === "missing-token") {
@@ -270,24 +256,19 @@ async function handler(req, res) {
 
   const validated = validatePayload(req.body || {});
   if (validated.error) {
-    return res.status(validated.status || 400).json({ error: validated.error });
+    return res.status(400).json({ error: validated.error });
   }
 
   // Municipality and ward are decided here from the chosen district and constituency and the
   // answer to the municipal-area question. A municipality_id in the request is never read.
-  try {
-    const municipalities = await serviceRest("/rest/v1/municipalities?is_active=eq.true&select=id,name,settings");
-    Object.assign(validated.report, await resolvePlacement(req.body || {}, {
-      municipalities,
-      wardBelongs: async (wardId, municipalityId) => {
-        const rows = await serviceRest(`/rest/v1/wards?id=eq.${wardId}&municipality_id=eq.${municipalityId}&select=id&limit=1`);
-        return rows.length > 0;
-      },
-    }));
-  } catch (error) {
-    if (error instanceof HttpError) return res.status(error.status).json({ error: error.message });
-    throw error;
-  }
+  const municipalities = await serviceRest("/rest/v1/municipalities?is_active=eq.true&select=id,name,settings");
+  Object.assign(validated.report, await resolvePlacement(req.body || {}, {
+    municipalities,
+    wardBelongs: async (wardId, municipalityId) => {
+      const rows = await serviceRest(`/rest/v1/wards?id=eq.${wardId}&municipality_id=eq.${municipalityId}&select=id&limit=1`);
+      return rows.length > 0;
+    },
+  }));
   validated.report.source = "public";
 
   const reps = await lookupRepresentatives(validated.report.constituency);
@@ -305,4 +286,4 @@ async function handler(req, res) {
   }
 
   return res.status(200).json({ ok: true, id: validated.report.id });
-}
+});

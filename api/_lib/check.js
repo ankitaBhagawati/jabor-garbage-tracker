@@ -48,7 +48,7 @@ assert.throws(() => cloudinaryFolder("anything-else"), { status: 400 });
 process.env.CLOUDINARY_FOLDER_PREFIX = "jabor-staging";
 assert.equal(cloudinaryFolder("reports"), "jabor-staging/reports");
 process.env.CLOUDINARY_FOLDER_PREFIX = "../escape";
-assert.throws(() => cloudinaryFolder("reports"), /not a valid folder path/);
+assert.throws(() => cloudinaryFolder("reports"), { status: 503, detail: /not a valid folder path/ });
 delete process.env.CLOUDINARY_FOLDER_PREFIX;
 
 // The signature route ignores any prefix the browser sends.
@@ -56,7 +56,7 @@ process.env.CLOUDINARY_API_KEY = "k";
 process.env.CLOUDINARY_API_SECRET = "s";
 const { default: sign } = await import("../cloudinary-signature.js");
 const signReq = folder => ({ ...req("POST", { origin: "https://jabor.in", "x-forwarded-for": "9.9.9.9" }), body: { folder } });
-for (const [sent, got] of [["reports", "jabor/reports"], ["jabor/reports", "jabor/reports"], ["someone-else/cleanup-proofs", "jabor/cleanup-proofs"]]) {
+for (const [sent, got] of [["reports", "jabor/reports"], ["jabor/reports", "jabor/reports"], ["someone-else/reports", "jabor/reports"]]) {
   res = mockRes();
   await sign(signReq(sent), res);
   assert.equal(res.statusCode, 200);
@@ -113,7 +113,7 @@ const { default: submit } = await import("../reports/submit.js");
 const quiet = { log: console.log, warn: console.warn };
 console.log = console.warn = () => {};
 res = mockRes();
-await submit({ method: "POST", headers: { host: "jabor.in" }, socket: {}, body: { area: "x" } }, res);
+await submit({ method: "POST", headers: { host: "jabor.in", origin: "https://jabor.in" }, socket: {}, body: { area: "x" } }, res);
 Object.assign(console, quiet);
 assert.equal(res.statusCode, 400);
 assert.equal(res.body.error, "The security check did not run. Please refresh the page and try again.");
@@ -151,7 +151,7 @@ async function submitReport(extra, place = { district: "Jorhat", constituency: "
   inserted = [];
   const out = mockRes();
   await submit({
-    method: "POST", headers: { host: "jabor.in" }, socket: {},
+    method: "POST", headers: { host: "jabor.in", origin: "https://jabor.in" }, socket: {},
     body: {
       turnstileToken: "token", area: "Test area", waste_type: "mixed", ...place,
       photo_url: `https://res.cloudinary.com/demo/image/upload/v1/jabor/reports/t${++photoCounter}.webp`, ...extra,

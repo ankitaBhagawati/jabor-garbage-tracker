@@ -1,4 +1,5 @@
 // Shared helpers for the Vercel functions in api/. Files under api/_lib are not routes.
+import crypto from "node:crypto";
 import { captureError } from "./sentry.js";
 
 export const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
@@ -12,6 +13,14 @@ export class HttpError extends Error {
   }
 }
 
+// Server misconfiguration (a missing secret, a bad env value): the caller gets a generic 503, the detail
+// goes to the log and Sentry only.
+export function configError(detail) {
+  const error = new HttpError(503, "Temporarily unavailable. Please try again later.");
+  error.detail = detail;
+  return error;
+}
+
 // Wraps a handler: enforces the method, same-origin requests, and turns HttpError into JSON.
 export function route(method, handler) {
   return async (req, res) => {
@@ -20,14 +29,19 @@ export function route(method, handler) {
         res.setHeader("Allow", method);
         throw new HttpError(405, "Method not allowed.");
       }
-      if (method !== "GET") assertSameOrigin(req);
+      if (method !== "GET") {
+        assertSameOrigin(req);
+        // Vercel parses the body lazily and throws on malformed JSON; that is the caller's mistake, not ours.
+        try { void req.body; } catch { throw new HttpError(400, "Invalid request body."); }
+      }
       res.setHeader("Cache-Control", "no-store");
       return await handler(req, res);
     } catch (e) {
       const status = e instanceof HttpError ? e.status : 500;
-      if (status === 500) {
-        console.error(e);
-        await captureError(e);
+      if (status === 500 || e.detail) {
+        const reported = e.detail ? new Error(e.detail) : e;
+        console.error(reported);
+        await captureError(reported);
       }
       return res.status(status).json({ error: status === 500 ? "Server error." : e.message });
     }
@@ -38,7 +52,9 @@ export function route(method, handler) {
 function assertSameOrigin(req) {
   const origin = req.headers.origin;
   const host = req.headers["x-forwarded-host"] || req.headers.host;
-  if (!origin || !host || new URL(origin).host !== host) {
+  let originHost = "";
+  try { originHost = new URL(origin).host; } catch { /* "null" or garbage: blocked below */ }
+  if (!origin || !host || originHost !== host) {
     throw new HttpError(403, "Cross-origin request blocked.");
   }
 }
@@ -113,20 +129,52 @@ export function isProduction() {
 // ── Cloudflare Turnstile ─────────────────────────────────────────────────────
 export async function verifyTurnstile(req, token) {
   const secret = process.env.TURNSTILE_SECRET_KEY;
-  if (!secret) throw new Error("TURNSTILE_SECRET_KEY is not configured.");
+  if (!secret) throw configError("TURNSTILE_SECRET_KEY is not configured.");
   if (typeof token !== "string" || !token) throw new HttpError(400, "Please complete the human check.");
-  const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    method: "POST",
-    body: new URLSearchParams({ secret, response: token, remoteip: getClientIp(req) }),
-  });
+  let res;
+  try {
+    res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      body: new URLSearchParams({ secret, response: token, remoteip: getClientIp(req) }),
+    });
+  } catch (error) {
+    console.error("[jabor] Turnstile verification call failed:", error?.message || error);
+    throw new HttpError(503, "The security check is unavailable right now. Please try again later.");
+  }
   const data = await res.json().catch(() => null);
   if (!data?.success) throw new HttpError(400, "Human check failed. Please try again.");
+}
+
+// A public cleanup proof passes Turnstile once, when its upload is signed. Turnstile tokens are single-use,
+// so the signature route hands back this ticket and /api/cleanup-proofs accepts it in place of a second token.
+// ponytail: replayable from the same address until it expires; the 5 per 10 minutes limit on
+// /api/cleanup-proofs bounds that. Bind it to the uploaded public_id if that ever matters.
+const PROOF_TICKET_TTL = 10 * 60;
+
+function proofTicketMac(expires, req) {
+  const secret = process.env.CLOUDINARY_API_SECRET;
+  if (!secret) throw configError("CLOUDINARY_API_SECRET is not configured.");
+  return crypto.createHmac("sha256", secret).update(`cleanup-proof:${expires}:${getClientIp(req)}`).digest("base64url");
+}
+
+export function issueProofTicket(req) {
+  const expires = Math.floor(Date.now() / 1000) + PROOF_TICKET_TTL;
+  return `${expires}.${proofTicketMac(expires, req)}`;
+}
+
+export function assertProofTicket(req, ticket) {
+  const [expires, mac] = typeof ticket === "string" ? ticket.split(".") : [];
+  const expected = /^\d+$/.test(expires || "") ? Buffer.from(proofTicketMac(expires, req)) : null;
+  const given = Buffer.from(mac || "");
+  if (!expected || Number(expires) < Date.now() / 1000 || given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
+    throw new HttpError(400, "The security check expired. Please refresh the page and try again.");
+  }
 }
 
 // ── Supabase ─────────────────────────────────────────────────────────────────
 // Service-role REST call: bypasses RLS, so callers must validate everything first.
 export async function serviceRest(path, options = {}) {
-  if (!SUPABASE_URL || !SERVICE_KEY) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured.");
+  if (!SUPABASE_URL || !SERVICE_KEY) throw configError("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not configured.");
   const res = await fetch(`${SUPABASE_URL}${path}`, {
     ...options,
     headers: {
@@ -156,7 +204,7 @@ const UPLOAD_KINDS = new Set(["reports", "cleanup-proofs"]);
 
 export function cloudinaryFolder(kind) {
   const prefix = (process.env.CLOUDINARY_FOLDER_PREFIX || "jabor").trim();
-  if (!/^[\w-]+(\/[\w-]+)*$/.test(prefix)) throw new Error("CLOUDINARY_FOLDER_PREFIX is not a valid folder path.");
+  if (!/^[\w-]+(\/[\w-]+)*$/.test(prefix)) throw configError("CLOUDINARY_FOLDER_PREFIX is not a valid folder path.");
   if (!UPLOAD_KINDS.has(kind)) throw new HttpError(400, "Upload folder is not allowed.");
   return `${prefix}/${kind}`;
 }
